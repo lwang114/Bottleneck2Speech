@@ -25,25 +25,25 @@ n_fft=1024  # number of fft points
 n_shift=256 # number of shift points
 win_length="" # window length
 # encoder related
-embed_dim=512
+embed_dim=16
 elayers=1
 eunits=512
-econv_layers=3 # if set 0, no conv layer is used
+econv_layers=1 # if set 0, no conv layer is used
 econv_chans=512
 econv_filts=5
 # decoder related
-dlayers=2
-dunits=1024
-prenet_layers=2  # if set 0, no prenet is used
-prenet_units=256
-postnet_layers=5 # if set 0, no postnet is used
-postnet_chans=512
+dlayers=1
+dunits=16
+prenet_layers=1  # if set 0, no prenet is used
+prenet_units=16
+postnet_layers=1 # if set 0, no postnet is used
+postnet_chans=16
 postnet_filts=5
 # attention related
 atype=location
-adim=128
-aconv_chans=32
-aconv_filts=15      # resulting in filter_size = aconv_filts * 2 + 1
+adim=16
+aconv_chans=16
+aconv_filts=5      # resulting in filter_size = aconv_filts * 2 + 1
 cumulate_att_w=true # whether to cumulate attetion weight
 use_batch_norm=true # whether to use batch normalization in conv layer
 use_concate=true    # whether to concatenate encoder embedding with decoder lstm outputs
@@ -52,7 +52,7 @@ use_masking=true    # whether to mask the padded part in loss calculation
 bce_pos_weight=1.0  # weight for positive samples of stop token in cross-entropy calculation
 reduction_factor=2
 # minibatch related
-batchsize=4 #XXX LW, 3.20.2020, 32
+batchsize=32 #XXX LW, 3.20.2020, 32
 batch_sort_key=shuffle # shuffle or input or output
 maxlen_in=150     # if input length  > maxlen_in, batchsize is reduced (if use "shuffle", not effect)
 maxlen_out=400    # if output length > maxlen_out, batchsize is reduced (if use "shuffle", not effect)
