@@ -76,7 +76,7 @@ class BabelKaldiPreparer:
                 if start >= end:
                   print('Corrupted segment info')
                 words = segment.strip().split(' ')
-                words = [w for w in words in w not in UNK and (w[0] != '<' or w[-1] != '>')]
+                words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>')]
                 if len(words) == 0:
                   print('Empty segment')
                   continue
