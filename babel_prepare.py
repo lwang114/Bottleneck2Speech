@@ -35,20 +35,21 @@ class BabelKaldiPreparer:
       os.mkdir('data/test')
       os.mkdir('data/dev')
    
-    '''
-    sph_dir = {
+    if self.audio_type == 'conversational':    
+      sph_dir = {
       'train': self.data_root + 'conversational/training/',
       'test': self.data_root + 'conversational/eval/',
       'dev':  self.data_root + 'conversational/dev/'
-    }
-    '''
-    
-    sph_dir = {
+      }
+    elif self.audio_type == 'scripted':
+      sph_dir = {
       'train': self.data_root + 'scripted/training/',
       'test': self.data_root + 'scripted/training/',
       'dev':  self.data_root + 'scripted/training/'
-    }
-      
+      }
+    else:
+      raise NotImplementedError
+
     for x in ['train', 'dev', 'test']:
       with open(os.path.join('data', x, 'text'), 'w') as text_f, \
            open(os.path.join('data', x, 'wav.scp'), 'w') as wav_scp_f, \
