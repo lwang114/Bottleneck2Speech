@@ -80,7 +80,7 @@ class BabelKaldiPreparer:
                 if len(words) == 0:
                   print('Empty segment')
                   continue
-                text_f.write(utt_id + ' ' + ' '.join(sent) + '\n')
+                text_f.write(utt_id + ' ' + ' '.join(words) + '\n')
                 wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                 os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |[%d,%d]\n' % (start, end))
                 utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
