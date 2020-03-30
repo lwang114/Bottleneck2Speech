@@ -69,8 +69,8 @@ class BabelKaldiPreparer:
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               lines = transcript_f.readlines()
               for start, segment, end in zip(lines[::2], lines[1::2], lines[2::2]):
-                start_sec = float(start[1:-1])
-                end_sec = float(end[1:-1])
+                start_sec = float(start[1:-2])
+                end_sec = float(end[1:-2])
                 start = int(self.fs * start_sec)
                 end = int(self.fs * end_sec)
                 if start >= end:
