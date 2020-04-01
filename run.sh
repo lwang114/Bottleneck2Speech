@@ -96,7 +96,7 @@ if [ ${stage} -le 0 ]; then
     
     # python local/data_prep.py ${an4_root} ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe
 
-    for x in dev_segmented train_segmented; do
+    for x in dev train; do
         for f in text wav.scp utt2spk; do
             sort data/${x}/${f} -o data/${x}/${f}
         done
@@ -114,7 +114,7 @@ if [ ${stage} -le 1 ]; then
 
     # Generate the fbank features; by default 80-dimensional fbanks on each frame
     fbankdir=fbank
-    for x in train_segmented test_segmented;do
+    for x in train dev;do
         make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \
             --fs ${fs} \
             --fmax "${fmax}" \
