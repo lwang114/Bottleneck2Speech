@@ -11,12 +11,13 @@ NONWORD = '~'
 DEBUG = True
 
 class BabelKaldiPreparer:
-  def __init__(self, data_root, sph2pipe, configs):
+  def __init__(self, data_root, exp_root, sph2pipe, configs):
     self.audio_type = configs.get('audio_type', 'scripted')
     self.is_segment = configs.get('is_segment', False)
     self.verbose = configs.get('verbose', 0)
     self.fs = 8000
     self.data_root = data_root
+    self.exp_root = exp_root
     self.sph2pipe = sph2pipe
 
     if self.audio_type == 'conversational':
@@ -70,10 +71,13 @@ class BabelKaldiPreparer:
           utt_id = transcript_fn.split('.')[0]
           if self.is_segment:
             print(x, utt_id)
-            with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
+            with open(self.exp_dir + 'segments', 'w') as new_segment_f,\
+                 open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               segment_f.truncate()
               lines = transcript_f.readlines()
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
+                if i_seg == 0:
+                  
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
                 # start = int(self.fs * start_sec)
@@ -88,12 +92,12 @@ class BabelKaldiPreparer:
                   if self.verbose > 0:
                     print('Empty segment')
                   continue
-                segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
+                new_segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
                 utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, '001\n')) # XXX dummy speaker id
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
-            
+            segment_f.write('%s 0.0 %.1f\n' % (utt_id, end_sec))
           else:
             print(x, utt_id)
             sent = []
@@ -115,7 +119,8 @@ class BabelKaldiPreparer:
       
 if __name__ == '__main__':
   data_root = '/home/lwang114/data/babel/BABEL_OP1_102/'
+  exp_dir = 'exp/apr1_OP1_102_conversational/'
   sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
   configs = {'audio_type': 'conversational', 'is_segment': True}
-  kaldi_prep = BabelKaldiPreparer(data_root, sph2pipe, configs)
+  kaldi_prep = BabelKaldiPreparer(data_root, exp_dir, sph2pipe, configs)
   kaldi_prep.prepare_tts()
