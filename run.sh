@@ -25,25 +25,25 @@ n_fft=1024  # number of fft points
 n_shift=256 # number of shift points
 win_length="" # window length
 # encoder related
-embed_dim=16
+embed_dim=512
 elayers=1
 eunits=512
-econv_layers=1 # if set 0, no conv layer is used
+econv_layers=3 # if set 0, no conv layer is used
 econv_chans=512
 econv_filts=5
 # decoder related
-dlayers=1
-dunits=16
-prenet_layers=1  # if set 0, no prenet is used
-prenet_units=16
-postnet_layers=1 # if set 0, no postnet is used
-postnet_chans=16
+dlayers=2
+dunits=1024
+prenet_layers=2  # if set 0, no prenet is used
+prenet_units=256
+postnet_layers=5 # if set 0, no postnet is used
+postnet_chans=512
 postnet_filts=5
 # attention related
 atype=location
-adim=16
-aconv_chans=16
-aconv_filts=5      # resulting in filter_size = aconv_filts * 2 + 1
+adim=128
+aconv_chans=32
+aconv_filts=15      # resulting in filter_size = aconv_filts * 2 + 1
 cumulate_att_w=true # whether to cumulate attetion weight
 use_batch_norm=true # whether to use batch normalization in conv layer
 use_concate=true    # whether to concatenate encoder embedding with decoder lstm outputs
@@ -52,7 +52,7 @@ use_masking=true    # whether to mask the padded part in loss calculation
 bce_pos_weight=1.0  # weight for positive samples of stop token in cross-entropy calculation
 reduction_factor=2
 # minibatch related
-batchsize=32 #XXX LW, 3.20.2020, 32
+batchsize=4 #XXX LW, 3.20.2020, 32
 batch_sort_key=shuffle # shuffle or input or output
 maxlen_in=150     # if input length  > maxlen_in, batchsize is reduced (if use "shuffle", not effect)
 maxlen_out=400    # if output length > maxlen_out, batchsize is reduced (if use "shuffle", not effect)
@@ -90,10 +90,13 @@ if [ ${stage} -le 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 0: Data preparation"
-    mkdir -p data/{train,test} exp
+    # python babel_prepared.py
+    # utils/data/subsegment_data_dir.sh data/train exp/apr1_OP1_102_conversational/train/segments exp/apr1_OP1_102_conversational/train/text data/train_segmented    
+    # utils/data/subsegment_data_dir.sh data/dev exp/apr1_OP1_102_conversational/dev/segments exp/apr1_OP1_102_conversational/dev/text data/dev_segmented    
+    
     # python local/data_prep.py ${an4_root} ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe
 
-    for x in test train; do
+    for x in dev_segmented train_segmented; do
         for f in text wav.scp utt2spk; do
             sort data/${x}/${f} -o data/${x}/${f}
         done
@@ -111,7 +114,7 @@ if [ ${stage} -le 1 ]; then
 
     # Generate the fbank features; by default 80-dimensional fbanks on each frame
     fbankdir=fbank
-    for x in train test;do
+    for x in train_segmented test_segmented;do
         make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \
             --fs ${fs} \
             --fmax "${fmax}" \
