@@ -99,7 +99,7 @@ class BabelKaldiPreparer:
                   continue
                 segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))            
-                utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, '001')) # XXX dummy speaker id
+                utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id)) # XXX dummy speaker id
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
           else:
