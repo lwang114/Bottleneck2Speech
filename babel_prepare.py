@@ -53,7 +53,8 @@ class BabelKaldiPreparer:
     for x in ['train', 'dev', 'test']:
       with open(os.path.join('data', x, 'text'), 'w') as text_f, \
            open(os.path.join('data', x, 'wav.scp'), 'w') as wav_scp_f, \
-           open(os.path.join('data', x, 'utt2spk'), 'w') as utt2spk_f:
+           open(os.path.join('data', x, 'utt2spk'), 'w') as utt2spk_f, \
+           open(os.path.join('data', x, 'segments'), 'w') as segment_f:
         text_f.truncate()
         wav_scp_f.truncate()
         utt2spk_f.truncate()
@@ -66,9 +67,12 @@ class BabelKaldiPreparer:
           i += 1
           utt_id = transcript_fn.split('.')[0]
           if self.is_segment:
+            print(x, utt_id)
+            sent = []
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
+              segment_f.truncate()
               lines = transcript_f.readlines()
-              for start, segment, end in zip(lines[::2], lines[1::2], lines[2::2]):
+              for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
                 start = int(self.fs * start_sec)
@@ -77,13 +81,16 @@ class BabelKaldiPreparer:
                   print('Corrupted segment info')
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>')]
+                sent += words
                 if len(words) == 0:
                   print('Empty segment')
                   continue
-                text_f.write(utt_id + ' ' + ' '.join(words) + '\n')
-                wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
-                os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |[%d,%d]\n' % (start, end))
-                utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
+                segment_f.write('%s_%04d %s %d %d\n' % (utt_id, i_seg, utt_id, start, end))
+                 
+                text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(sent))
+            wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
+            os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
+            utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
           else:
             print(x, utt_id)
             sent = []
