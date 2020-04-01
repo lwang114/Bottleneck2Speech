@@ -7,6 +7,7 @@ import numpy as np
 import librosa
 
 UNK = ['(())']
+NONWORD = '~'
 DEBUG = True
 
 class BabelKaldiPreparer:
