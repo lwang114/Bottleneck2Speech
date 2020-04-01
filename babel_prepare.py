@@ -13,6 +13,7 @@ class BabelKaldiPreparer:
   def __init__(self, data_root, sph2pipe, configs):
     self.audio_type = configs.get('audio_type', 'scripted')
     self.is_segment = configs.get('is_segment', False)
+    self.verbose = configs.get('verbose', 0)
     self.fs = 8000
     self.data_root = data_root
     self.sph2pipe = sph2pipe
@@ -77,11 +78,14 @@ class BabelKaldiPreparer:
                 # start = int(self.fs * start_sec)
                 # end = int(self.fs * end_sec)
                 if start_sec >= end_sec:
-                  print('Corrupted segment info')
+                  if self.verbose > 0:
+                    print('Corrupted segment info')
+                  continue
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>') and w not in NONWORD]
                 if len(words) == 0:
-                  print('Empty segment')
+                  if self.verbose > 0:
+                    print('Empty segment')
                   continue
                 segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
@@ -98,7 +102,8 @@ class BabelKaldiPreparer:
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>')]
                 sent += words
               if len(words) == 0:
-                print('Empty transcript file')
+                if self.verbose > 0:
+                  print('Empty transcript file')
                 continue
 
             text_f.write(utt_id + ' ' + ' '.join(sent) + '\n')
