@@ -63,13 +63,11 @@ class BabelKaldiPreparer:
       with open(os.path.join('data', x, 'text'), 'w') as text_f, \
            open(os.path.join('data', x, 'wav.scp'), 'w') as wav_scp_f, \
            open(os.path.join('data', x, 'utt2spk'), 'w') as utt2spk_f, \
-           open(os.path.join('data', x, 'segments'), 'w') as segment_f, \
-           open(os.path.join(self.exp_root, x, 'segments'), 'w') as new_segment_f,\
-           open(os.path.join(self.exp_root, x, 'text'), 'w') as new_text_f:  
+           open(os.path.join('data', x, 'segments'), 'w') as segment_f:  
         text_f.truncate()
         wav_scp_f.truncate()
         utt2spk_f.truncate()
-        new_segment_f.truncate()
+        segment_f.truncate()
  
         i = 0
         for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
@@ -82,7 +80,6 @@ class BabelKaldiPreparer:
           if self.is_segment:
             print(x, utt_id)
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
-              segment_f.truncate()
               lines = transcript_f.readlines()
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 start_sec = float(start[1:-2])
@@ -100,14 +97,12 @@ class BabelKaldiPreparer:
                   if self.verbose > 0:
                     print('Empty segment')
                   continue
-                new_segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
-                new_text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
+                segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
+                text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
                 
             utt2spk_f.write('%s %s\n' % (utt_id, '001')) # XXX dummy speaker id
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
-            segment_f.write('%s 0.0 %.1f\n' % (utt_id, end_sec))
-            text_f.write(utt_id + ' ' + ' '.join(sent) + '\n')
           else:
             print(x, utt_id)
             sent = []
@@ -126,6 +121,8 @@ class BabelKaldiPreparer:
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                 os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
             utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
+      if not self.is_segment:
+        os.remove(os.path.join('data', x, 'segments'))
 
 if __name__ == '__main__':
   data_root = '/home/lwang114/data/babel/BABEL_OP1_102/'
