@@ -37,6 +37,12 @@ class BabelKaldiPreparer:
       os.mkdir('data/train')
       os.mkdir('data/test')
       os.mkdir('data/dev')
+    
+    if not os.path.isdir(self.exp_root):
+      os.mkdir(exp_root)
+      os.mkdir(exp_root + 'train')
+      os.mkdir(exp_root + 'test')
+      os.mkdir(exp_root + 'dev')
    
     if self.audio_type == 'conversational':    
       sph_dir = {
@@ -57,11 +63,14 @@ class BabelKaldiPreparer:
       with open(os.path.join('data', x, 'text'), 'w') as text_f, \
            open(os.path.join('data', x, 'wav.scp'), 'w') as wav_scp_f, \
            open(os.path.join('data', x, 'utt2spk'), 'w') as utt2spk_f, \
-           open(os.path.join('data', x, 'segments'), 'w') as segment_f:
+           open(os.path.join('data', x, 'segments'), 'w') as segment_f, \
+           open(os.path.join(self.exp_root, x, 'segments'), 'w') as new_segment_f,\
+           open(os.path.join(self.exp_root, x, 'text'), 'w') as new_text_f:  
         text_f.truncate()
         wav_scp_f.truncate()
         utt2spk_f.truncate()
-
+        new_segment_f.truncate()
+ 
         i = 0
         for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
           # XXX
@@ -69,15 +78,13 @@ class BabelKaldiPreparer:
           #   continue
           i += 1
           utt_id = transcript_fn.split('.')[0]
+          sent = []
           if self.is_segment:
             print(x, utt_id)
-            with open(self.exp_dir + 'segments', 'w') as new_segment_f,\
-                 open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
+            with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               segment_f.truncate()
               lines = transcript_f.readlines()
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
-                if i_seg == 0:
-                  
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
                 # start = int(self.fs * start_sec)
@@ -88,16 +95,19 @@ class BabelKaldiPreparer:
                   continue
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>') and w not in NONWORD]
+                sent += words
                 if len(words) == 0:
                   if self.verbose > 0:
                     print('Empty segment')
                   continue
                 new_segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
-                text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
-            utt2spk_f.write('%s %s\n' % (utt_id, '001\n')) # XXX dummy speaker id
+                new_text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
+                
+            utt2spk_f.write('%s %s\n' % (utt_id, '001')) # XXX dummy speaker id
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
             segment_f.write('%s 0.0 %.1f\n' % (utt_id, end_sec))
+            text_f.write(utt_id + ' ' + ' '.join(sent) + '\n')
           else:
             print(x, utt_id)
             sent = []
@@ -116,11 +126,11 @@ class BabelKaldiPreparer:
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                 os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
             utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
-      
+
 if __name__ == '__main__':
   data_root = '/home/lwang114/data/babel/BABEL_OP1_102/'
-  exp_dir = 'exp/apr1_OP1_102_conversational/'
+  exp_root = 'exp/apr1_OP1_102_conversational/'
   sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
   configs = {'audio_type': 'conversational', 'is_segment': True}
-  kaldi_prep = BabelKaldiPreparer(data_root, exp_dir, sph2pipe, configs)
+  kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
   kaldi_prep.prepare_tts()
