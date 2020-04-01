@@ -81,8 +81,8 @@ class BabelKaldiPreparer:
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>')]
                 if len(words) == 0:
-                   print('Empty segment')
-                continue
+                  print('Empty segment')
+                  continue
                 segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
