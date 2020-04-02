@@ -52,7 +52,7 @@ use_masking=true    # whether to mask the padded part in loss calculation
 bce_pos_weight=1.0  # weight for positive samples of stop token in cross-entropy calculation
 reduction_factor=2
 # minibatch related
-batchsize=4 #XXX LW, 3.20.2020, 32
+batchsize=32
 batch_sort_key=shuffle # shuffle or input or output
 maxlen_in=150     # if input length  > maxlen_in, batchsize is reduced (if use "shuffle", not effect)
 maxlen_out=400    # if output length > maxlen_out, batchsize is reduced (if use "shuffle", not effect)
@@ -82,9 +82,9 @@ set -e
 set -u
 set -o pipefail
 
-train_set=training
+train_set=train
 train_dev=dev
-eval_set="test"
+eval_set=dev
 
 if [ ${stage} -le 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
@@ -129,9 +129,10 @@ if [ ${stage} -le 1 ]; then
     done
 
     # make a dev set
-    utils/subset_data_dir.sh --first data/train 100 data/${train_dev}
-    n=$(( $(wc -l < data/train/wav.scp) - 100 ))
-    utils/subset_data_dir.sh --first data/train ${n} data/${train_set}
+    # XXX L.W., 4.1.2020
+    # utils/subset_data_dir.sh --first data/train 100 data/${train_dev}
+    # n=$(( $(wc -l < data/train/segments) - 100 ))
+    # utils/subset_data_dir.sh --first data/train ${n} data/${train_set}
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
