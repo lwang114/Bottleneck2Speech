@@ -1,29 +1,44 @@
 import os
-import shutil
-from scipy.io import wavfile 
-from scipy.signal import decimate
-from nltk.corpus import cmudict
 import numpy as np
 import librosa
+from util import *
+import kaldiio
 
 UNK = ['(())']
 NONWORD = '~'
-EPS = 1e-5
+EPS = 1e-2
 DEBUG = True
 
-def VAD(y, fs, thres=EPS):
-  mask = y > thres:
+def VAD(y, fs, thres=EPS, coeff=1.0):
+  L = y.shape[0]
+  window_len = min(int(fs * 0.1), L)
+  dur = float(y.shape[0]/fs)
+  exp_filter = coeff ** (np.arange(window_len)[::-1])
+  exp_filter /= window_len
+  y_smooth = np.convolve(np.abs(y), exp_filter, 'same')
+  mask = (y_smooth > thres).astype(float)
   mask_diff = np.diff(mask)
-  start_nonsils = np.where(mask_diff > 0) 
-  end_nonsils = np.where(mask_diff < 0)
+
+  start_nonsils = np.where(mask_diff > 0)[0] 
+  end_nonsils = np.where(mask_diff < 0)[0]
   start_sec_nonsils = [float(start/fs) for start in start_nonsils]
   end_sec_nonsils = [float(end/fs) for end in end_nonsils]
+  if len(end_sec_nonsils) < len(start_sec_nonsils):
+    end_sec_nonsils.append(dur)
+
+  # print(start_sec_nonsils[:10], end_sec_nonsils[:10])
+  # print(start_nonsils[:10], end_nonsils[:10])
   return start_sec_nonsils, end_sec_nonsils
+
+def VAD2(sgram, fs, thres=EPS):
+  L = sgram.shape[0]
+
 
 class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
     self.audio_type = configs.get('audio_type', 'scripted')
     self.is_segment = configs.get('is_segment', False)
+    self.vad = configs.get('vad', True)
     self.verbose = configs.get('verbose', 0)
     self.fs = 8000
     self.data_root = data_root
@@ -44,8 +59,6 @@ class BabelKaldiPreparer:
       self.audios = {'train': os.listdir(data_root+'scripted/training/audio/'),
                      'test': os.listdir(data_root+'scripted/eval/audio/'),
                      'dev':  os.listdir(data_root+'scripted/dev/audio/')} 
-
-
     else:
       raise NotImplementedError
 
@@ -95,15 +108,21 @@ class BabelKaldiPreparer:
           # i += 1
 
           # Load audio
-          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 %s temp.wav' % audio_fn)
-          y = librosa.load('temp.wav', sr=self.sr)  
+          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 %s temp.wav' % (sph_dir[x] + 'audio/' + audio_fn))
+          y, _ = librosa.load('temp.wav', sr=self.fs)  
           utt_id = transcript_fn.split('.')[0]
           sent = []
           if self.is_segment:
-            # print(x, utt_id)
+            print(x, utt_id)
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               lines = transcript_f.readlines()
+              i_seg = 0
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
+                # XXX
+                # if i_seg > 1:
+                #   continue
+                # i_seg += 1
+
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
                 start = int(self.fs * start_sec)
@@ -119,6 +138,7 @@ class BabelKaldiPreparer:
 
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>') and w not in NONWORD]
+                subsegments = [] 
                 sent += words
                 
                 # Remove utterances that are too long
@@ -131,14 +151,15 @@ class BabelKaldiPreparer:
                   continue
                 
                 # Skip silence interval
-                start_sec_nonsils, end_sec_nonsils = VAD(y, self.fs)
-                print(start_sec_nonsils, end_sec_nonsils)
-                
-                for i_subseg, start_sec_nonsil, end_sec_nonsil in zip(start_sec_nonsils, end_sec_nonsils): 
-                  segment_f.write('%s_%04d_%4d %s %.1f %.1f\n' % (utt_id, i_seg,  i_subseg, utt_id, start_sec_nonsil, end_sec_nonsil)) 
-                  text_f.write('%s_%04d_%04d %s\n' % (utt_id, i_seg, i_subseg, ' '.join(words)))            
-                  utt2spk_f.write('%s_%04d_%04d %s\n' % (utt_id, i_seg, i_subseg, utt_id)) # XXX dummy speaker id
+                if self.vad:
+                  start_sec_nonsils, end_sec_nonsils = VAD(np.append(np.zeros((start,)), y[start:end]), self.fs)
+                  # for i_subseg, (start_sec_nonsil, end_sec_nonsil) in enumerate(zip(start_sec_nonsils, end_sec_nonsils)): 
+                  segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec_nonsils[0], end_sec_nonsils[-1])) 
+                else:
+                  segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
 
+                text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))            
+                utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id)) # XXX dummy speaker id
             if len(sent) == 0:
               continue
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
@@ -169,6 +190,6 @@ if __name__ == '__main__':
   data_root = '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
   exp_root = 'exp/apr1_BP1_101_conversational/'
   sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
-  configs = {'audio_type': 'conversational', 'is_segment': True}
+  configs = {'audio_type': 'conversational', 'is_segment': True, 'vad': False}
   kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
   kaldi_prep.prepare_tts()
