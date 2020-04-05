@@ -11,6 +11,15 @@ NONWORD = '~'
 EPS = 1e-5
 DEBUG = True
 
+def VAD(y, fs, thres=EPS):
+  mask = y > thres:
+  mask_diff = np.diff(mask)
+  start_nonsils = np.where(mask_diff > 0) 
+  end_nonsils = np.where(mask_diff < 0)
+  start_sec_nonsils = [float(start/fs) for start in start_nonsils]
+  end_sec_nonsils = [float(end/fs) for end in end_nonsils]
+  return start_sec_nonsils, end_sec_nonsils
+
 class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
     self.audio_type = configs.get('audio_type', 'scripted')
@@ -25,10 +34,18 @@ class BabelKaldiPreparer:
       self.transcripts = {'train': os.listdir(data_root+'conversational/training/transcript_roman/'),
                           'test': os.listdir(data_root+'conversational/eval/transcript_roman/'),
                           'dev':  os.listdir(data_root+'conversational/dev/transcript_roman/')} 
+      self.audios = {'train': os.listdir(data_root+'conversational/training/audio/'),
+                     'test': os.listdir(data_root+'conversational/eval/audio/'),
+                     'dev':  os.listdir(data_root+'conversational/dev/audio/')}  
     elif self.audio_type == 'scripted':
       self.transcripts = {'train': os.listdir(data_root+'scripted/training/transcript_roman/'),
                         'test': os.listdir(data_root+'scripted/training/transcript_roman/'),
-                        'dev':  os.listdir(data_root+'scripted/training/transcript_roman/')} 
+                        'dev':  os.listdir(data_root+'scripted/training/transcript_roman/')}  
+      self.audios = {'train': os.listdir(data_root+'scripted/training/audio/'),
+                     'test': os.listdir(data_root+'scripted/eval/audio/'),
+                     'dev':  os.listdir(data_root+'scripted/dev/audio/')} 
+
+
     else:
       raise NotImplementedError
 
@@ -71,14 +88,15 @@ class BabelKaldiPreparer:
         segment_f.truncate()
  
         i = 0
-        for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
+        for transcript_fn, audio_fn in zip(sorted(self.transcripts[x], key=lambda x:x.split('.')[0]), sorted(self.audios[x], key=lambda x:x.split('.')[0])):
           # XXX
           # if i > 1:
           #   continue
           # i += 1
+
           # Load audio
-          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 /home/lwang114/data/babel/IARPA_BABEL_BP_101/conversational/training/audio/BABEL_BP_101_10033_20111024_205740_inLine.sph temp.wav')
-          _, y = wavfile.read('temp.wav')  
+          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 %s temp.wav' % audio_fn)
+          y = librosa.load('temp.wav', sr=self.sr)  
           utt_id = transcript_fn.split('.')[0]
           sent = []
           if self.is_segment:
@@ -94,6 +112,7 @@ class BabelKaldiPreparer:
                   if self.verbose > 0:
                     print('Corrupted segment info')
                   continue
+
                 if end_sec - start_sec >= 30:
                   print('Audio sequence too long: ', utt_id, start_sec, end_sec)
                   continue
@@ -112,15 +131,13 @@ class BabelKaldiPreparer:
                   continue
                 
                 # Skip silence interval
-                start_nonsil = np.where(y[start:end] >= EPS)
-                end_nonsil = end - np.where(y[start:end][::-1] >= EPS)
-                start_sec_nonsil = float(start_nonsil / self.fs)
-                end_sec_nonsil = float(end_nonsil / self.fs)
-                print(start_sec_nonsil, end_sec_nonsil)
-
-                segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec_nonsil, end_sec_nonsil)) 
-                text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))            
-                utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id)) # XXX dummy speaker id
+                start_sec_nonsils, end_sec_nonsils = VAD(y, self.fs)
+                print(start_sec_nonsils, end_sec_nonsils)
+                
+                for i_subseg, start_sec_nonsil, end_sec_nonsil in zip(start_sec_nonsils, end_sec_nonsils): 
+                  segment_f.write('%s_%04d_%4d %s %.1f %.1f\n' % (utt_id, i_seg,  i_subseg, utt_id, start_sec_nonsil, end_sec_nonsil)) 
+                  text_f.write('%s_%04d_%04d %s\n' % (utt_id, i_seg, i_subseg, ' '.join(words)))            
+                  utt2spk_f.write('%s_%04d_%04d %s\n' % (utt_id, i_seg, i_subseg, utt_id)) # XXX dummy speaker id
 
             if len(sent) == 0:
               continue
