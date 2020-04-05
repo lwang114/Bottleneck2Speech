@@ -78,7 +78,7 @@ class BabelKaldiPreparer:
           utt_id = transcript_fn.split('.')[0]
           sent = []
           if self.is_segment:
-            print(x, utt_id)
+            # print(x, utt_id)
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               lines = transcript_f.readlines()
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
@@ -90,6 +90,10 @@ class BabelKaldiPreparer:
                   if self.verbose > 0:
                     print('Corrupted segment info')
                   continue
+                if end_sec - start_sec >= 30:
+                  print('Audio sequence too long: ', utt_id, start_sec, end_sec)
+                  continue
+
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>') and w not in NONWORD]
                 sent += words
@@ -97,9 +101,16 @@ class BabelKaldiPreparer:
                   if self.verbose > 0:
                     print('Empty segment')
                   continue
+                elif len(words) > 400:
+                  print('Phone sequence too long: ', utt_id, len(words))
+                  continue
+                
                 segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))            
                 utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id)) # XXX dummy speaker id
+
+            if len(sent) == 0:
+              continue
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
           else:
@@ -124,8 +135,8 @@ class BabelKaldiPreparer:
         os.remove(os.path.join('data', x, 'segments'))
 
 if __name__ == '__main__':
-  data_root = '/home/lwang114/data/babel/BABEL_OP1_102/'
-  exp_root = 'exp/apr1_OP1_102_conversational/'
+  data_root = '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
+  exp_root = 'exp/apr1_BP1_101_conversational/'
   sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
   configs = {'audio_type': 'conversational', 'is_segment': True}
   kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
