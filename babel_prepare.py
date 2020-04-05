@@ -8,6 +8,7 @@ import librosa
 
 UNK = ['(())']
 NONWORD = '~'
+EPS = 1e-5
 DEBUG = True
 
 class BabelKaldiPreparer:
@@ -74,7 +75,10 @@ class BabelKaldiPreparer:
           # XXX
           # if i > 1:
           #   continue
-          i += 1
+          # i += 1
+          # Load audio
+          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 /home/lwang114/data/babel/IARPA_BABEL_BP_101/conversational/training/audio/BABEL_BP_101_10033_20111024_205740_inLine.sph temp.wav')
+          _, y = wavfile.read('temp.wav')  
           utt_id = transcript_fn.split('.')[0]
           sent = []
           if self.is_segment:
@@ -84,8 +88,8 @@ class BabelKaldiPreparer:
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
-                # start = int(self.fs * start_sec)
-                # end = int(self.fs * end_sec)
+                start = int(self.fs * start_sec)
+                end = int(self.fs * end_sec)
                 if start_sec >= end_sec:
                   if self.verbose > 0:
                     print('Corrupted segment info')
@@ -97,6 +101,8 @@ class BabelKaldiPreparer:
                 words = segment.strip().split(' ')
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>') and w not in NONWORD]
                 sent += words
+                
+                # Remove utterances that are too long
                 if len(words) == 0:
                   if self.verbose > 0:
                     print('Empty segment')
@@ -105,7 +111,14 @@ class BabelKaldiPreparer:
                   print('Phone sequence too long: ', utt_id, len(words))
                   continue
                 
-                segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
+                # Skip silence interval
+                start_nonsil = np.where(y[start:end] >= EPS)
+                end_nonsil = end - np.where(y[start:end][::-1] >= EPS)
+                start_sec_nonsil = float(start_nonsil / self.fs)
+                end_sec_nonsil = float(end_nonsil / self.fs)
+                print(start_sec_nonsil, end_sec_nonsil)
+
+                segment_f.write('%s_%04d %s %.1f %.1f\n' % (utt_id, i_seg, utt_id, start_sec_nonsil, end_sec_nonsil)) 
                 text_f.write('%s_%04d %s\n' % (utt_id, i_seg, ' '.join(words)))            
                 utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id)) # XXX dummy speaker id
 
@@ -114,6 +127,7 @@ class BabelKaldiPreparer:
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
           else:
+            # TODO: Remove silence interval
             print(x, utt_id)
             sent = []
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
