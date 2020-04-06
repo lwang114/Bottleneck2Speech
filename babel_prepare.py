@@ -7,6 +7,7 @@ import kaldiio
 UNK = ['(())']
 NONWORD = '~'
 EPS = 1e-2
+LOGEPS = -60
 DEBUG = True
 
 def VAD(y, fs, thres=EPS, coeff=1.0):
@@ -30,9 +31,26 @@ def VAD(y, fs, thres=EPS, coeff=1.0):
   # print(start_nonsils[:10], end_nonsils[:10])
   return start_sec_nonsils, end_sec_nonsils
 
-def VAD2(sgram, fs, thres=EPS):
-  L = sgram.shape[0]
+def VAD2(y, fs, thres=LOGEPS):
+  L = y.shape[0]
+  n_fft = int(10 * sr / 1000)
+  hop_length = int(25 * sr / 1000)
+  win_len = 2
+  
+  sgram = librosa.feature.melspectrogram(y=y, sr=fs, n_mfcc=40, n_fft=n_fft, hop_length=hop_length)
+  energies = np.mean(sgram, axis=1)
+  mask = (energies > thres).astype(float)
+  mask_diff = np.diff(mask)
+  start_nonsils = np.where(mask_diff > 0)[0] 
+  end_nonsils = np.where(mask_diff < 0)[0]
+  start_sec_nonsils = [float(start * n_fft / fs) for start in start_nonsils]
+  end_sec_nonsils = [float(end * n_fft / fs) for end in end_nonsils]
+  if len(end_sec_nonsils) < len(start_sec_nonsils):
+    end_sec_nonsils.append(dur)
 
+  # print(start_sec_nonsils[:10], end_sec_nonsils[:10])
+  # print(start_nonsils[:10], end_nonsils[:10])
+  return start_sec_nonsils, end_sec_nonsils
 
 class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
@@ -153,6 +171,9 @@ class BabelKaldiPreparer:
                 # Skip silence interval
                 if self.vad:
                   start_sec_nonsils, end_sec_nonsils = VAD(np.append(np.zeros((start,)), y[start:end]), self.fs)
+                  if len(start_sec_nonsils) == 0:
+                    print('Audio too quiet')
+                    continue
                   # for i_subseg, (start_sec_nonsil, end_sec_nonsil) in enumerate(zip(start_sec_nonsils, end_sec_nonsils)): 
                   segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec_nonsils[0], end_sec_nonsils[-1])) 
                 else:
@@ -185,6 +206,29 @@ class BabelKaldiPreparer:
             utt2spk_f.write(utt_id + ' ' + '001\n') # XXX dummy speaker id
       if not self.is_segment:
         os.remove(os.path.join('data', x, 'segments'))
+  
+  def remove_silence(self):
+    feat_dir = 'fbank/'
+    if not os.path.isdir('fbank_no_silence/'):
+      os.mkdir('fbank_no_silence')
+
+    ark_files = {
+      'train': os.listdir(feat_dir+'*_train.ark'),
+      'dev': os.listdir(feat_dir+'*_dev.ark'),
+      'test': os.listdir(feat_dir+'*_test.ark')
+      }
+    
+    '''
+    scp_files = {
+      'train': os.listdir(feat_dir+'*_train.scp'),
+      'dev': os.listdir(feat_dir+'*_dev.scp'),
+      'test': os.listdir(feat_dir+'*_test.scp')
+      }
+    '''  
+    
+    for x in ['train', 'dev', 'test']:
+      for ark_file in ark_files[x]
+        
 
 if __name__ == '__main__':
   data_root = '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
