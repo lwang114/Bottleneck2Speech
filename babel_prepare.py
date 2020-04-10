@@ -4,11 +4,11 @@ import librosa
 
 UNK = ['(())']
 NONWORD = '~'
-EPS = 1e-3
-LOGEPS = -60
+EPS = 1e-4
+LOGEPS = -30
 DEBUG = True
 
-def VAD(y, fs, thres=EPS, coeff=1.0):
+def VAD(y, fs, thres=EPS, merge_thres=0.02, coeff=1.0):
   L = y.shape[0]
   window_len = min(int(fs * 0.1), L)
   dur = float(y.shape[0]/fs)
@@ -24,12 +24,34 @@ def VAD(y, fs, thres=EPS, coeff=1.0):
   end_sec_nonsils = [float(end/fs) for end in end_nonsils]
   if len(end_sec_nonsils) < len(start_sec_nonsils):
     end_sec_nonsils.append(dur)
+  
+  segments = [(start, end) for start, end in zip(start_sec_nonsils, end_sec_nonsils)]
+  segments_merged = []
+  # Merge close segments
+  for i_seg, seg in enumerate(segments):
+    if i_seg == 0:
+      segments_merged.append(seg)
+      continue
 
-  # print(start_sec_nonsils[:10], end_sec_nonsils[:10])
-  # print(start_nonsils[:10], end_nonsils[:10])
-  return start_sec_nonsils, end_sec_nonsils
+    prev_merged_seg = segments_merged[-1]
+    if seg[0] - prev_merged_seg[1] < 0:
+      print('Overlapped segment: end of seg1 %.1f s, start of seg2 %.1f s' % (prev_merged_seg[1], seg[0]))      
+      continue
+    elif round(seg[0] - prev_merged_seg[1], 2) <= merge_thres:
+      segments_merged.pop(-1)
+      segments_merged.append((prev_merged_seg[0], seg[1]))
+    else:
+      # print('prev_merged_seg, seg, prev_merged_seg - seg: ', prev_merged_seg, seg, round(seg[0] - prev_merged_seg[1], 2))
+      segments_merged.append(seg)
+  
+  start_sec_nonsils_merged = [seg[0] for seg in segments_merged]
+  end_sec_nonsils_merged = [seg[1] for seg in segments_merged]
 
-def VAD2(y, fs, thres=EPS):
+  print('Before merge: ', segments)
+  print('After merge: ', segments_merged)
+  return start_sec_nonsils_merged, end_sec_nonsils_merged
+
+def VAD2(y, fs, thres=EPS, merge_thres=0.2):
   L = y.shape[0]
   dur = float(y.shape[0] / fs)
   n_fft = int(25 * fs / 1000)
@@ -37,20 +59,43 @@ def VAD2(y, fs, thres=EPS):
   # win_len = 2
   
   sgram = librosa.feature.melspectrogram(y=y, sr=fs, n_mels=40, n_fft=n_fft, hop_length=hop_length)
-  # print(sgram.shape)
+  sgram -= sgram.mean()
+  sgram /= max(np.sqrt(np.var(sgram)), EPS)  
   energies = np.sum(sgram, axis=0)
   mask = (energies > thres).astype(float)
   mask_diff = np.diff(mask)
   start_nonsils = np.where(mask_diff > 0)[0] 
   end_nonsils = np.where(mask_diff < 0)[0]
-  start_sec_nonsils = [float(start * hop_length) / fs for start in start_nonsils]
-  end_sec_nonsils = [float(end * hop_length) / fs for end in end_nonsils]
+  start_sec_nonsils = [round(float(start * hop_length) / fs, 2) for start in start_nonsils]
+  end_sec_nonsils = [round(float(end * hop_length) / fs, 2) for end in end_nonsils]
   if len(end_sec_nonsils) < len(start_sec_nonsils):
     end_sec_nonsils.append(dur)
 
-  # print(start_sec_nonsils[:10], end_sec_nonsils[:10])
-  # print(start_nonsils[:10], end_nonsils[:10])
-  return start_sec_nonsils, end_sec_nonsils
+  segments = [(start, end) for start, end in zip(start_sec_nonsils, end_sec_nonsils)]
+  segments_merged = []
+  # Merge close segments
+  for i_seg, seg in enumerate(segments):
+    if i_seg == 0:
+      segments_merged.append(seg)
+      continue
+
+    prev_merged_seg = segments_merged[-1]
+    if seg[0] - prev_merged_seg[1] < 0:
+      print('Overlapped segment: end of seg1 %.1f s, start of seg2 %.1f s' % (prev_merged_seg[1], seg[0]))      
+      continue
+    elif round(seg[0] - prev_merged_seg[1], 2) <= merge_thres:
+      segments_merged.pop(-1)
+      segments_merged.append((prev_merged_seg[0], seg[1]))
+    else:
+      # print('prev_merged_seg, seg, prev_merged_seg - seg: ', prev_merged_seg, seg, round(seg[0] - prev_merged_seg[1], 2))
+      segments_merged.append(seg)
+  
+  start_sec_nonsils_merged = [seg[0] for seg in segments_merged]
+  end_sec_nonsils_merged = [seg[1] for seg in segments_merged]
+
+  print('Before merge: ', segments)
+  print('After merge: ', segments_merged)
+  return start_sec_nonsils_merged, end_sec_nonsils_merged
 
 class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
@@ -73,8 +118,8 @@ class BabelKaldiPreparer:
                      'dev':  os.listdir(data_root+'conversational/dev/audio/')}  
     elif self.audio_type == 'scripted':
       self.transcripts = {'train': os.listdir(data_root+'scripted/training/transcript_roman/'),
-                        'test': os.listdir(data_root+'scripted/training/transcript_roman/'),
-                        'dev':  os.listdir(data_root+'scripted/training/transcript_roman/')}  
+                          'test': os.listdir(data_root+'scripted/training/transcript_roman/'),
+                          'dev':  os.listdir(data_root+'scripted/training/transcript_roman/')}  
       self.audios = {'train': os.listdir(data_root+'scripted/training/audio/'),
                      'test': os.listdir(data_root+'scripted/eval/audio/'),
                      'dev':  os.listdir(data_root+'scripted/dev/audio/')} 
@@ -127,7 +172,8 @@ class BabelKaldiPreparer:
           # i += 1
 
           # Load audio
-          os.system('/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe -f wav -p -c 1 %s temp.wav' % (sph_dir[x] + 'audio/' + audio_fn))
+          os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
+
           y, _ = librosa.load('temp.wav', sr=self.fs)  
           utt_id = transcript_fn.split('.')[0]
           sent = []
@@ -138,7 +184,7 @@ class BabelKaldiPreparer:
               i_seg = 0
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 # XXX
-                # if i_seg > 1:
+                # if i_seg > 5:
                 #   continue
                 # i_seg += 1
 
@@ -210,21 +256,26 @@ class BabelKaldiPreparer:
   
   # TODO
   def remove_silence(self):
-    feat_dir = 'fbank/'
-    if not os.path.isdir('fbank_no_silence/'):
-      os.mkdir('fbank_no_silence')
+    pass
+    # feat_dir = 'fbank/'
+    # if not os.path.isdir('fbank_no_silence/'):
+    #   os.mkdir('fbank_no_silence')
+    # ark_files = {
+    #   'train': os.listdir(feat_dir+'*_train.ark'),
+    #   'dev': os.listdir(feat_dir+'*_dev.ark'),
+    #   'test': os.listdir(feat_dir+'*_test.ark')
+    #  }
+    
+    # Detect silence interval
 
-    ark_files = {
-      'train': os.listdir(feat_dir+'*_train.ark'),
-      'dev': os.listdir(feat_dir+'*_dev.ark'),
-      'test': os.listdir(feat_dir+'*_test.ark')
-      }
-        
-
+    # Skip silence interval and concatenate the nonsilence speech
+  
 if __name__ == '__main__':
-  data_root = '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
+  data_root = '/Users/liming/research/data/IARPA_BABEL_BP_101/'
+  # '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
   exp_root = 'exp/apr1_BP1_101_conversational/'
-  sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
-  configs = {'audio_type': 'conversational', 'is_segment': True, 'vad': False}
+  sph2pipe = 'sph2pipe_v2.5/sph2pipe'
+  # '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
+  configs = {'audio_type': 'conversational', 'is_segment': True, 'vad': True}
   kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
   kaldi_prep.prepare_tts()
