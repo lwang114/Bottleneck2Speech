@@ -5,7 +5,7 @@ from copy import deepcopy
 
 UNK = ['(())']
 NONWORD = '~'
-EPS = 1e-4
+EPS = 1e-5
 LOGEPS = -30
 DEBUG = True
 
@@ -48,8 +48,8 @@ def VAD(y, fs, thres=EPS, merge_thres=0.02, coeff=1.0):
   start_sec_nonsils_merged = [seg[0] for seg in segments_merged]
   end_sec_nonsils_merged = [seg[1] for seg in segments_merged]
 
-  print('Before merge: ', segments)
-  print('After merge: ', segments_merged)
+  # print('Before merge: ', segments)
+  # print('After merge: ', segments_merged)
   return start_sec_nonsils_merged, end_sec_nonsils_merged
 
 def VAD2(y, fs, thres=EPS, merge_thres=0.2):
@@ -94,8 +94,8 @@ def VAD2(y, fs, thres=EPS, merge_thres=0.2):
   start_sec_nonsils_merged = [seg[0] for seg in segments_merged]
   end_sec_nonsils_merged = [seg[1] for seg in segments_merged]
 
-  print('Before merge: ', segments)
-  print('After merge: ', segments_merged)
+  # print('Before merge: ', segments)
+  # print('After merge: ', segments_merged)
   return start_sec_nonsils_merged, end_sec_nonsils_merged
 
 class BabelKaldiPreparer:
@@ -222,6 +222,7 @@ class BabelKaldiPreparer:
                 # Skip silence interval
                 if self.vad:
                   start_sec_nonsils, end_sec_nonsils = VAD2(np.append(np.zeros((start,)), y[start:end]), self.fs)
+                
                   if len(start_sec_nonsils) == 0:
                     print('Audio too quiet: ', utt_id)
                     continue 
@@ -316,7 +317,7 @@ class BabelKaldiPreparer:
             nonsilence_intervals[utt_id] = {}
 
           start_sec, end_sec = float(line.split()[-2]), float(line.split()[-1])
-          if seg_id in nonsilence_intervals:
+          if seg_id in nonsilence_intervals[utt_id]:
             nonsilence_intervals[utt_id][seg_id].append([start_sec, end_sec])
           else:
             nonsilence_intervals[utt_id][seg_id] = [[start_sec, end_sec]]
@@ -353,14 +354,12 @@ class BabelKaldiPreparer:
             nonsil_whole_utterance = nonsilence_intervals[utt_id]    
             start_seg, end_seg = 0, 0
             for i_seg, seg_id in enumerate(sorted(nonsil_whole_utterance, key=lambda x:int(x))):
+              print(seg_id)
               nonsil_segment = nonsil_whole_utterance[seg_id]
               # XXX
-              if i_seg > 5:
-                continue
-              print(seg_id) 
-
-              
-              for start_end in nonsil_segment:
+              # if i_seg > 5:
+              #   continue
+              for start_end in nonsil_segment:          
                 start = int(start_end[0] * self.fs)
                 end = int(start_end[1] * self.fs) 
                 seg = y[start:end] 
