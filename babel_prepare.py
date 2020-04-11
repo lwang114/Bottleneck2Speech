@@ -171,10 +171,14 @@ class BabelKaldiPreparer:
         segment_f.truncate()
  
         i = 0
-        for transcript_fn, audio_fn in zip(sorted(self.transcripts[x], key=lambda x:x.split('.')[0]), sorted(self.audios[x], key=lambda x:x.split('.')[0])):
+        for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
+          for audio_fn in self.audios[x]:
+            if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
+              break 
+
           # XXX
-          # if i > 1:
-          #   continue
+          if i > 1:
+            continue
           i += 1
           utt_id = transcript_fn.split('.')[0]
           
@@ -195,12 +199,11 @@ class BabelKaldiPreparer:
               i_seg = 0
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 # XXX
-                if i_seg < 80:
-                  continue
+                # if i_seg < 80:
+                #   continue
 
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
-                print(start_sec, end_sec)
                 start = int(self.fs * start_sec)
                 end = int(self.fs * end_sec)
                 if start_sec >= end_sec:
@@ -230,7 +233,7 @@ class BabelKaldiPreparer:
                 if self.vad:
                   start_sec_nonsils, end_sec_nonsils = VAD2(y[start:end+1], self.fs)
                   if len(start_sec_nonsils) == 0:
-                    print('Audio too quiet: ', utt_id)
+                    print('Audio too quiet: ', utt_id, start_sec, end_sec)
                     continue 
 
                   segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec+start_sec_nonsils[0], start_sec+end_sec_nonsils[-1])) 
@@ -342,14 +345,18 @@ class BabelKaldiPreparer:
           segment_f.truncate()
 
           i = 0 
-          for transcript_fn, audio_fn in zip(sorted(self.transcripts[x], key=lambda x:x.split('.')[0]), sorted(self.audios[x], key=lambda x:x.split('.')[0])):
-            # XXX
+          for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
+            for audio_fn in self.audios[x]:
+              if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
+                break 
+
+           # XXX
             if i > 1:
               continue
             i += 1
             utt_id = transcript_fn.split('.')[0]
             print(i, x, utt_id)
-
+            print(audio_fn)
             # Convert .SPH files into .wav
             os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
  
@@ -361,7 +368,6 @@ class BabelKaldiPreparer:
             nonsil_whole_utterance = nonsilence_intervals[utt_id]    
             start_seg, end_seg = 0, 0
             for i_seg, seg_id in enumerate(sorted(nonsil_whole_utterance, key=lambda x:int(x))):
-              print(seg_id)
               nonsil_segment = nonsil_whole_utterance[seg_id]
               # XXX
               # if i_seg > 5:
@@ -377,7 +383,6 @@ class BabelKaldiPreparer:
               start_seg = end_seg
 
             y_nonsil = np.concatenate(y_nonsil, axis=0)
-            print(y_nonsil.shape)
 
             # Segment the audio, save it as a .wav file
             wav_scp_f.write(utt_id + ' ' + os.path.join(out_dir, x, audio_fn) + '\n')
