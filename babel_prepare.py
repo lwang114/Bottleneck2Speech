@@ -23,6 +23,7 @@ def VAD(y, fs, thres=EPS, merge_thres=0.02, coeff=1.0):
   end_nonsils = np.where(mask_diff < 0)[0]
   start_sec_nonsils = [float(start/fs) for start in start_nonsils]
   end_sec_nonsils = [float(end/fs) for end in end_nonsils]
+  
   if len(end_sec_nonsils) < len(start_sec_nonsils):
     end_sec_nonsils.append(dur)
   
@@ -172,15 +173,20 @@ class BabelKaldiPreparer:
         i = 0
         for transcript_fn, audio_fn in zip(sorted(self.transcripts[x], key=lambda x:x.split('.')[0]), sorted(self.audios[x], key=lambda x:x.split('.')[0])):
           # XXX
-          if i > 1:
-            continue
+          # if i > 1:
+          #   continue
           i += 1
+          utt_id = transcript_fn.split('.')[0]
+          
+          # XXX
+          # if utt_id != 'BABEL_BP_101_16617_20111030_144124_inLine': 
+          #   print(utt_id)
+          #   continue
 
           # Load audio
           os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
 
           y, _ = librosa.load('temp.wav', sr=self.fs)  
-          utt_id = transcript_fn.split('.')[0]
           sent = []
           if self.is_segment:
             print(i, x, utt_id)
@@ -189,11 +195,12 @@ class BabelKaldiPreparer:
               i_seg = 0
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
                 # XXX
-                if i_seg > 5:
+                if i_seg < 80:
                   continue
 
                 start_sec = float(start[1:-2])
                 end_sec = float(end[1:-2])
+                print(start_sec, end_sec)
                 start = int(self.fs * start_sec)
                 end = int(self.fs * end_sec)
                 if start_sec >= end_sec:
@@ -221,14 +228,14 @@ class BabelKaldiPreparer:
                 
                 # Skip silence interval
                 if self.vad:
-                  start_sec_nonsils, end_sec_nonsils = VAD2(np.append(np.zeros((start,)), y[start:end]), self.fs)
-                
+                  start_sec_nonsils, end_sec_nonsils = VAD2(y[start:end+1], self.fs)
                   if len(start_sec_nonsils) == 0:
                     print('Audio too quiet: ', utt_id)
                     continue 
-                  segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec_nonsils[0], end_sec_nonsils[-1])) 
+
+                  segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec+start_sec_nonsils[0], start_sec+end_sec_nonsils[-1])) 
                   for i_subseg, (start_sec_nonsil, end_sec_nonsil) in enumerate(zip(start_sec_nonsils, end_sec_nonsils)):
-                    nonsil_f.write('%s_%04d_%02d %s %.2f %.2f\n' % (utt_id, i_seg, i_subseg, utt_id, start_sec_nonsils[i_subseg], end_sec_nonsils[i_subseg]))
+                    nonsil_f.write('%s_%04d_%02d %s %.2f %.2f\n' % (utt_id, i_seg, i_subseg, utt_id, start_sec+start_sec_nonsils[i_subseg], start_sec+end_sec_nonsils[i_subseg]))
                 else:
                   segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec, end_sec)) 
 
