@@ -5,7 +5,7 @@ from copy import deepcopy
 
 UNK = ['(())']
 NONWORD = '~'
-EPS = 1e-5
+EPS = 1e-3
 LOGEPS = -30
 DEBUG = True
 
@@ -60,12 +60,14 @@ def VAD2(y, fs, thres=EPS, merge_thres=0.2):
   hop_length = int(10 * fs / 1000)
   # win_len = 2
   
-  sgram = librosa.feature.melspectrogram(y=y, sr=fs, n_mels=40, n_fft=n_fft, hop_length=hop_length)
-  sgram -= sgram.mean()
-  sgram /= max(np.sqrt(np.var(sgram)), EPS)  
+  sgram = np.abs(librosa.stft(y=y, n_fft=n_fft, hop_length=hop_length))**2
   energies = np.sum(sgram, axis=0)
+  energies /= max(np.max(energies), EPS)
+  # energies -= energies.mean()
+  # sgram /= max(np.std(energies), EPS)  
+
   mask = (energies > thres).astype(float)
-  mask_diff = np.diff(mask)
+  mask_diff = np.diff(np.append(np.zeros((1,)), mask))
   start_nonsils = np.where(mask_diff > 0)[0] 
   end_nonsils = np.where(mask_diff < 0)[0]
   start_sec_nonsils = [round(float(start * hop_length) / fs, 2) for start in start_nonsils]
@@ -97,7 +99,8 @@ def VAD2(y, fs, thres=EPS, merge_thres=0.2):
 
   # print('Before merge: ', segments)
   # print('After merge: ', segments_merged)
-  return start_sec_nonsils_merged, end_sec_nonsils_merged
+  # XXX
+  return start_sec_nonsils_merged, end_sec_nonsils_merged, energies, mask
 
 class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
@@ -177,15 +180,14 @@ class BabelKaldiPreparer:
               break 
 
           # XXX
-          if i > 1:
-            continue
+          # if i > 1:
+          #   continue
           i += 1
           utt_id = transcript_fn.split('.')[0]
           
           # XXX
-          # if utt_id != 'BABEL_BP_101_16617_20111030_144124_inLine': 
-          #   print(utt_id)
-          #   continue
+          if utt_id != 'BABEL_BP_101_28204_20111025_133714_inLine': 
+            continue
 
           # Load audio
           os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
@@ -231,10 +233,15 @@ class BabelKaldiPreparer:
                 
                 # Skip silence interval
                 if self.vad:
-                  start_sec_nonsils, end_sec_nonsils = VAD2(y[start:end+1], self.fs)
+                  start_sec_nonsils, end_sec_nonsils, energies, mask = VAD2(y[start:end+1], self.fs)
                   if len(start_sec_nonsils) == 0:
                     print('Audio too quiet: ', utt_id, start_sec, end_sec)
                     continue 
+                  if end_sec_nonsils[-1] < start_sec_nonsils[0]:
+                    print('Corrupted nonsilence interval: ', end_sec_nonsils[-1], start_sec_nonsils[0])
+                    print('Energies: ', energies)
+                    print('Mask: ', mask)
+                    continue
 
                   segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_sec+start_sec_nonsils[0], start_sec+end_sec_nonsils[-1])) 
                   for i_subseg, (start_sec_nonsil, end_sec_nonsil) in enumerate(zip(start_sec_nonsils, end_sec_nonsils)):
@@ -350,11 +357,16 @@ class BabelKaldiPreparer:
               if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
                 break 
 
-           # XXX
-            if i > 1:
-              continue
+            # XXX
+            # if i > 1:
+            #   continue
             i += 1
+
+            # XXX
             utt_id = transcript_fn.split('.')[0]
+            if utt_id != 'BABEL_BP_101_67798_20111104_013951_inLine': 
+              print(utt_id)
+              continue
             print(i, x, utt_id)
             print(audio_fn)
             # Convert .SPH files into .wav
