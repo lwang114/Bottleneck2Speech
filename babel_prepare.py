@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import librosa
+from scipy.io import wavfile
 from copy import deepcopy
 
 UNK = ['(())']
@@ -106,6 +107,7 @@ class BabelKaldiPreparer:
   def __init__(self, data_root, exp_root, sph2pipe, configs):
     self.audio_type = configs.get('audio_type', 'scripted')
     self.is_segment = configs.get('is_segment', False)
+    self.create_dev = configs.get('create_dev', True)
     self.nonsilence_interval_file = configs.get('nonsilence_interval_file', 'nonsilence_intervals')
     self.vad = configs.get('vad', True)
     self.verbose = configs.get('verbose', 0)
@@ -117,7 +119,7 @@ class BabelKaldiPreparer:
 
     if self.audio_type == 'conversational':
       # XXX Use sub-train
-      self.transcripts = {'train': os.listdir(data_root+'conversational/sub-train/transcript_roman/'),
+      self.transcripts = {'train': os.listdir(data_root+'conversational/training/transcript_roman/'),
                           'test': os.listdir(data_root+'conversational/eval/transcript_roman/'),
                           'dev':  os.listdir(data_root+'conversational/dev/transcript_roman/')} 
       self.audios = {'train': os.listdir(data_root+'conversational/training/audio/'),
@@ -178,30 +180,38 @@ class BabelKaldiPreparer:
           for audio_fn in self.audios[x]:
             if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
               break 
-
           # XXX
-          # if i > 1:
-          #   continue
-          i += 1
-          utt_id = transcript_fn.split('.')[0]
-          
-          # XXX
-          if utt_id != 'BABEL_BP_101_28204_20111025_133714_inLine': 
+          if i > 200:
             continue
+          i += 1
+            
+          if self.create_dev:
+            if x == 'train' and (i > 0.9 * len(self.transcripts[x])):
+              continue
+            elif (x == 'test' or x == 'dev') and (i < 0.9 * len(self.transcripts[x])):
+              continue  
+
+          utt_id = transcript_fn.split('.')[0]
+          # audio_fn = utt_id + '.sph'
+          # XXX
+          # if utt_id != 'BABEL_BP_101_28204_20111025_133714_inLine': 
+          #    continue
 
           # Load audio
           os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
 
           y, _ = librosa.load('temp.wav', sr=self.fs)  
           sent = []
+
           if self.is_segment:
+            i_seg_all = 0
             print(i, x, utt_id)
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
               lines = transcript_f.readlines()
-              i_seg = 0
               for i_seg, (start, segment, end) in enumerate(zip(lines[::2], lines[1::2], lines[2::2])):
+                i_seg_all += 1
                 # XXX
-                # if i_seg < 80:
+                # if i_seg_all > 20000:
                 #   continue
 
                 start_sec = float(start[1:-2])
@@ -256,7 +266,6 @@ class BabelKaldiPreparer:
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                     os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
           else:
-            # TODO: Remove silence interval
             print(x, utt_id)
             sent = []
             with open(sph_dir[x] + 'transcript_roman/' + transcript_fn, 'r') as transcript_f:
@@ -265,6 +274,7 @@ class BabelKaldiPreparer:
                 words = line.strip().split(' ')             
                 words = [w for w in words if w not in UNK and (w[0] != '<' or w[-1] != '>')]
                 sent += words
+              
               if len(words) == 0:
                 if self.verbose > 0:
                   print('Empty transcript file')
@@ -274,6 +284,7 @@ class BabelKaldiPreparer:
             wav_scp_f.write(utt_id + ' ' + self.sph2pipe + ' -f wav -p -c 1 ' + \
                 os.path.join(sph_dir[x], 'audio/', utt_id + '.sph') + ' |\n')
             utt2spk_f.write(utt_id + ' ' + utt_id) # XXX dummy speaker id
+
       if not self.is_segment:
         os.remove(os.path.join('data', x, 'segments'))
   
@@ -324,7 +335,8 @@ class BabelKaldiPreparer:
     
     nonsilence_intervals = {}
 
-    for x in ['train', 'dev', 'test']:
+    # XXX
+    for x in ['train']: #['train', 'dev', 'test']:
       with open(self.nonsilence_interval_files[x], 'r') as nonsil_f:
         for line in nonsil_f:
           utt_id = line.split()[1]
@@ -339,7 +351,8 @@ class BabelKaldiPreparer:
           else:
             nonsilence_intervals[utt_id][seg_id] = [[start_sec, end_sec]]
   
-    for x in ['train', 'dev', 'test']:
+    # XXX
+    for x in ['train']: #['train', 'dev', 'test']:
       # TODO Handle unsegmented utterances
       if self.is_segment:
         with open(os.path.join('data', x+'_nonsil', 'text'), 'w') as text_f, \
@@ -353,6 +366,10 @@ class BabelKaldiPreparer:
 
           i = 0 
           for transcript_fn in sorted(self.transcripts[x], key=lambda x:x.split('.')[0]):
+            utt_id = transcript_fn.split('.')[0]
+            if utt_id not in nonsilence_intervals:
+              continue
+
             for audio_fn in self.audios[x]:
               if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
                 break 
@@ -363,17 +380,16 @@ class BabelKaldiPreparer:
             i += 1
 
             # XXX
-            utt_id = transcript_fn.split('.')[0]
-            if utt_id != 'BABEL_BP_101_67798_20111104_013951_inLine': 
-              print(utt_id)
-              continue
+            # if utt_id != 'BABEL_BP_101_67798_20111104_013951_inLine': 
+            #   print(utt_id)
+            #   continue
             print(i, x, utt_id)
             print(audio_fn)
             # Convert .SPH files into .wav
             os.system('%s -f wav -p -c 1 %s temp.wav' % (self.sph2pipe, sph_dir[x] + 'audio/' + audio_fn))
  
             # Load .wav file
-            y, _ = librosa.load('temp.wav', sr=self.fs)
+            _, y = wavfile.read('temp.wav')
             y_nonsil = []
 
             # Load segment intervals
@@ -397,16 +413,63 @@ class BabelKaldiPreparer:
             y_nonsil = np.concatenate(y_nonsil, axis=0)
 
             # Segment the audio, save it as a .wav file
-            wav_scp_f.write(utt_id + ' ' + os.path.join(out_dir, x, audio_fn) + '\n')
-            librosa.output.write_wav(os.path.join(out_dir, x, audio_fn.split('.')[0]+'.wav'), y_nonsil, sr=self.fs)
-  
+            wav_scp_f.write(utt_id + ' ' + os.path.join(out_dir, x, audio_fn.split('.')[0]+'.wav') + '\n')
+            wavfile.write(os.path.join(out_dir, x, audio_fn.split('.')[0]+'.    wav'), self.fs, y_nonsil) 
+
+  def merge_short_utterances(self, out_tag='_merged', min_dur_sec=3, min_text_char=6):
+    # XXX
+    for x in ['train']:
+      if not os.path.isdir(os.path.join('data', x+out_tag)): 
+        os.mkdir(os.path.join('data', x+out_tag))
+      
+      with open(os.path.join('data', x+'_nonsil', 'segments'), 'r') as in_segment_f,\
+           open(os.path.join('data', x+'_nonsil', 'text'), 'r') as in_text_f,\
+           open(os.path.join('data', x+out_tag, 'segments'), 'w') as out_segment_f,\
+           open(os.path.join('data', x+out_tag, 'text'), 'w') as out_text_f,\
+           open(os.path.join('data', x+out_tag, 'utt2spk'), 'w') as utt2spk_f:
+        out_segment_f.truncate()
+        out_text_f.truncate()
+
+        i_seg = 0 
+        dur = 0.
+        sent_len = 0
+        start_seg = 0.
+        sent_seg = ''
+        lines_in_segment = in_segment_f.readlines()
+        lines_in_text = in_text_f.readlines()
+        for line_in_seg, line_in_text in zip(lines_in_segment, lines_in_text):
+          parts = line_in_seg.strip().split()
+          sent = ' '.join(line_in_text.strip().split()[1:])
+          seg_id = parts[0]
+          utt_id = parts[1]
+          start = float(parts[2])
+          end = float(parts[3])
+          dur += (end - start)
+          sent_len += len(sent.split())
+          sent_seg = sent_seg + ' ' + sent
+          if dur < min_dur_sec or sent_len < min_text_char:
+            continue
+          else:             
+            print(utt_id, sent_seg, dur, sent_len)
+            out_segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_seg, start_seg + dur))
+            out_text_f.write('%s_%04d %s\n' % (utt_id, i_seg, sent_seg)) 
+            utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id))
+            i_seg += 1
+            start_seg += dur
+            dur = 0.
+            sent_len = 0
+            sent_seg = ''
+
 if __name__ == '__main__':
-  data_root = '/Users/liming/research/data/IARPA_BABEL_BP_101/'
+  data_root = '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
+  # '/Users/liming/research/data/IARPA_BABEL_BP_101/'
   # '/home/lwang114/data/babel/IARPA_BABEL_BP_101/'
   exp_root = 'exp/apr1_BP1_101_conversational/'
-  sph2pipe = 'sph2pipe_v2.5/sph2pipe'
+  sph2pipe = '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
+  # 'sph2pipe_v2.5/sph2pipe'
   # '/home/lwang114/kaldi/tools/sph2pipe_v2.5/sph2pipe'
   configs = {'audio_type': 'conversational', 'is_segment': True, 'vad': True}
   kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
-  kaldi_prep.prepare_tts()
+  # kaldi_prep.prepare_tts()
   kaldi_prep.remove_silence() 
+  # kaldi_prep.merge_short_utterances()
