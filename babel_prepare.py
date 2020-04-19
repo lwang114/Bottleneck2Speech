@@ -375,7 +375,7 @@ class BabelKaldiPreparer:
                 break 
 
             # XXX
-            # if i > 1:
+            # if i > 2:
             #   continue
             i += 1
 
@@ -414,7 +414,7 @@ class BabelKaldiPreparer:
 
             # Segment the audio, save it as a .wav file
             wav_scp_f.write(utt_id + ' ' + os.path.join(out_dir, x, audio_fn.split('.')[0]+'.wav') + '\n')
-            wavfile.write(os.path.join(out_dir, x, audio_fn.split('.')[0]+'.    wav'), self.fs, y_nonsil) 
+            wavfile.write(os.path.join(out_dir, x, audio_fn.split('.')[0]+'.wav'), self.fs, y_nonsil) 
 
   def merge_short_utterances(self, out_tag='_merged', min_dur_sec=3, min_text_char=6):
     # XXX
@@ -437,20 +437,30 @@ class BabelKaldiPreparer:
         sent_seg = ''
         lines_in_segment = in_segment_f.readlines()
         lines_in_text = in_text_f.readlines()
+        prev_utt_id = ''
         for line_in_seg, line_in_text in zip(lines_in_segment, lines_in_text):
           parts = line_in_seg.strip().split()
           sent = ' '.join(line_in_text.strip().split()[1:])
           seg_id = parts[0]
           utt_id = parts[1]
+          if prev_utt_id != utt_id:
+            print(prev_utt_id, utt_id)
+            i_seg = 0
+            dur = 0.
+            sent_len = 0
+            start_seg = 0.
+            sent_seg = ''
+            prev_utt_id = deepcopy(utt_id)
           start = float(parts[2])
           end = float(parts[3])
           dur += (end - start)
           sent_len += len(sent.split())
           sent_seg = sent_seg + ' ' + sent
+
           if dur < min_dur_sec or sent_len < min_text_char:
             continue
           else:             
-            print(utt_id, sent_seg, dur, sent_len)
+            # print(utt_id, sent_seg, dur, sent_len)
             out_segment_f.write('%s_%04d %s %.2f %.2f\n' % (utt_id, i_seg, utt_id, start_seg, start_seg + dur))
             out_text_f.write('%s_%04d %s\n' % (utt_id, i_seg, sent_seg)) 
             utt2spk_f.write('%s_%04d %s\n' % (utt_id, i_seg, utt_id))
@@ -472,4 +482,4 @@ if __name__ == '__main__':
   kaldi_prep = BabelKaldiPreparer(data_root, exp_root, sph2pipe, configs)
   # kaldi_prep.prepare_tts()
   kaldi_prep.remove_silence() 
-  # kaldi_prep.merge_short_utterances()
+  kaldi_prep.merge_short_utterances()
