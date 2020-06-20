@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 # TODO
 class ConvAutoEncoder(nn.Module):
-  def __init__(self, n_class, embedding_dim=1024):
+  def __init__(self, input_dim=14, embedding_dim=1024):
     super(ConvAutoEncoder, self).__init__()
     self.embedding_dim = embedding_dim
     self.enc = nn.Sequential(

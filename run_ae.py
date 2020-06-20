@@ -6,9 +6,8 @@ import torch
 import torchvision
 from AudioModels import *
 import torchvision.transforms as transforms
-from traintest_ctc import *
-from audio_sequence_dataset import *
-from mscoco_synthetic_caption_dataset import *
+from traintest_ae import *
+from audio_waveform_dataset import *
 import json
 import numpy as np
 import random
@@ -25,7 +24,6 @@ parser.add_argument('--lr_decay', type=int, default=10, help='Divide the learnin
 parser.add_argument('--dataset_train', default='TIMIT', choices=['TIMIT', 'mscoco_train'], help='Data set used for training the model')
 parser.add_argument('--dataset_test', default='mscoco2k', choices=['mscoco2k', 'mscoco20k'], help='Data set used for training the model')
 parser.add_argument('--n_epoch', type=int, default=20)
-parser.add_argument('--n_class', type=int, default=62)
 parser.add_argument('--audio_model', type=str, default='ae', choices=['ae'], help='Acoustic model architecture')
 parser.add_argument('--optim', type=str, default='sgd',
         help="training optimizer", choices=["sgd", "adam"])
@@ -46,7 +44,7 @@ if args.exp_dir is None:
 # TODO
 feat_configs = {}
 
-tasks = [0]
+tasks = [0, 1]
 #------------------#
 # Network Training #
 #------------------#
@@ -58,15 +56,16 @@ if 0 in tasks:
     args.class2id_file = '../data/TIMIT/TIMIT_train_phone2ids.json'
   elif args.dataset_train == 'mscoco_train':
     audio_root_path = '/home/lwang114/data/mscoco/audio/train2014/wav/'
-    audio_sequence_file_train = '../data/mscoco/mscoco_phone_sequence_train.txt' 
-    audio_sequence_file_test = '../data/mscoco/mscoco_phone_sequence_test.txt' 
-    args.class2id_file = '../data/mscoco/mscoco_phone_sequence_phone2id.json'
-    
-  with open(args.class2id_file, 'r') as f:
-    class2idx = json.load(f)
-  args.n_class = len(class2idx.keys())
+    audio_sequence_file_train = '../data/mscoco_phone_sequence_train.txt' 
+    audio_sequence_file_test = '../data/mscoco_phone_sequence_test.txt' 
+    args.class2id_file = '../data/mscoco_phone_sequence_phone2id.json'
+  elif args.dataset_train == 'babel':
+    audio_root_path = '/ws/ifp-53_1/hasegawa/data/babel/' 
+    audio_sequence_file_train = '../data/babel_phone_sequence_train.txt'
+    audio_sequence_file_test = '../data/babel_phone_sequence_test.txt'
+  # TODO GlobalPhone
 
-  # TODO Implement an SVM to classify frame-level features 
+  # TODO Implement a phone recognizer to evaluate performance 
   trainset = AudioWaveformDataset(audio_root_path, audio_sequence_file_train, feat_configs=feat_configs)
   testset = AudioWaveformDataset(audio_root_path, audio_sequence_file_test, feat_configs=feat_configs) 
     
@@ -149,7 +148,7 @@ if 3 in tasks:
           ds_rate = 16
 
         sfeat = ffeat[int(start_frame_local/ds_rate):int(end_frame_local/ds_rate)+1]
-          start_phn += end_frame - start_frame + 1 
+        start_phn += end_frame - start_frame + 1 
 
         if feat_type == 'mean':
           mean_feat = np.mean(sfeat, axis=0)

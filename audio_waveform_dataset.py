@@ -1,7 +1,7 @@
 import torch
 import librosa
 import scipy.io as io
-from sphfile import SPHFile
+# from sphfile import SPHFile
 from torch.utils.data import Dataset, DataLoader
 import json
 import numpy as np
@@ -42,8 +42,8 @@ class AudioWaveformDataset(Dataset):
       i = 0
       for line in f:
         # XXX
-        # if i > 16:
-        #   break
+        if i > 16:
+          break
         i += 1 
         audio_info = line.strip().split()         
         self.audio_filenames.append(audio_info[0])
@@ -59,10 +59,11 @@ class AudioWaveformDataset(Dataset):
     try:
       sr, y = io.wavfile.read(self.audio_root_path + audio_filename)
     except:
-      if audio_filename.split('.')[-1] == 'wav':
-        audio_filename_sph = '.'.join(audio_filename.split('.')[:-1]+['WAV'])
-        sph = SPHFile(self.audio_root_path + audio_filename_sph)
-        sph.write_wav(self.audio_root_path + audio_filename)
+      # XXX
+      # if audio_filename.split('.')[-1] == 'wav':
+      #   audio_filename_sph = '.'.join(audio_filename.split('.')[:-1]+['WAV'])
+      #   sph = SPHFile(self.audio_root_path + audio_filename_sph)
+      #   sph.write_wav(self.audio_root_path + audio_filename)
       sr, y = io.wavfile.read(self.audio_root_path + audio_filename)
 
     y = preemphasis(y, self.coeff) 

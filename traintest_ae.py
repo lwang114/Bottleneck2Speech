@@ -1,12 +1,13 @@
 import time
 import shutil
-from util import *
 import torch
 import torch.nn as nn
 import numpy as np
 import sys
 import json
 import os
+from torch.autograd import Variable
+
 
 def train(audio_model, train_loader, test_loader, args, device_id=0): 
   if torch.cuda.is_available():
@@ -36,7 +37,7 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
 
   running_loss = 0.
   best_acc = 0.
-  criterion = MSELoss()
+  criterion = nn.MSELoss()
   for epoch in range(args.n_epoch):
     running_loss = 0.
     # XXX
@@ -49,10 +50,6 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
       #  break
 
       inputs, nframes = audio_input 
-      B = labels.size(0)
-      labels_1d = []
-      for b in range(B):
-      
       inputs = Variable(inputs)
       nframes = nframes.type(dtype=torch.int)
       
@@ -63,10 +60,8 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
       outputs = audio_model(inputs)
       # print(nframes.data.numpy())
       # print(nphones.data.numpy())
-      # print(inputs.size(), labels.size(), nframes.size(), nphones.size())
-      # print(inputs.type(), labels.type(), nframes.type(), nphones.type())
 
-      # CTC loss
+      # MSE loss
       loss = criterion(outputs, inputs) 
       #running_loss += loss.data.cpu().numpy()[0]
       running_loss += loss.data.cpu().numpy()
@@ -118,7 +113,6 @@ def validate(audio_model, test_loader, args):
 
       audios, nframes = audio_input
       # XXX
-      # print(labels[1].cpu().numpy())
       audios = Variable(audios)
       if torch.cuda.is_available():
         audios = audios.cuda()

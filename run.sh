@@ -1,78 +1,69 @@
 #!/bin/bash
 
-# Copyright 2018 Nagoya University (Tomoki Hayashi)
+# Copyright 2020 Johns Hopkins University (Piotr Żelasko)
+# Copyright 2018 Johns Hopkins University (Matthew Wiesner)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-. ./path.sh
-. ./cmd.sh
+. ./path.sh || exit 1;
+. ./cmd.sh || exit 1;
 
 # general configuration
 backend=pytorch
-stage=0
-ngpu=1       # number of gpu in training
-nj=32        # numebr of parallel jobs
-dumpdir=dump # directory to dump full features
-verbose=0    # verbose option (if set > 0, get more log)
-N=0          # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
-seed=1       # random seed number
-resume=""    # the snapshot path to resume (if set empty, no effect)
-# feature extraction related
-fs=8000    # sampling frequency
-fmax=""     # maximum frequency
-fmin=""     # minimum frequency
-n_mels=80   # number of mel basis
-n_fft=1024  # number of fft points
-n_shift=256 # number of shift points
-win_length="" # window length
-# encoder related
-embed_dim=512
-elayers=1
-eunits=512
-econv_layers=3 # if set 0, no conv layer is used
-econv_chans=512
-econv_filts=5
-# decoder related
-dlayers=2
-dunits=1024
-prenet_layers=2  # if set 0, no prenet is used
-prenet_units=256
-postnet_layers=5 # if set 0, no postnet is used
-postnet_chans=512
-postnet_filts=5
-# attention related
-atype=location
-adim=128
-aconv_chans=32
-aconv_filts=15      # resulting in filter_size = aconv_filts * 2 + 1
-cumulate_att_w=true # whether to cumulate attetion weight
-use_batch_norm=true # whether to use batch normalization in conv layer
-use_concate=true    # whether to concatenate encoder embedding with decoder lstm outputs
-use_residual=false  # whether to use residual connection in encoder convolution
-use_masking=true    # whether to mask the padded part in loss calculation
-bce_pos_weight=1.0  # weight for positive samples of stop token in cross-entropy calculation
-reduction_factor=2
-# minibatch related
-batchsize=32
-batch_sort_key=shuffle # shuffle or input or output
-maxlen_in=150     # if input length  > maxlen_in, batchsize is reduced (if use "shuffle", not effect)
-maxlen_out=400    # if output length > maxlen_out, batchsize is reduced (if use "shuffle", not effect)
-# optimization related
-lr=1e-3
-eps=1e-6
-weight_decay=0.0
-dropout=0.5
-zoneout=0.1
-epochs=200
-patience=10
-# decoding related
-model=model.loss.best
-threshold=0.5    # threshold to stop the generation
-maxlenratio=10.0 # maximum length of generated samples = input length * maxlenratio
-minlenratio=0.0  # minimum length of generated samples = input length * minlenratio
-griffin_lim_iters=1000  # the number of iterations of Griffin-Lim
+stage=0        # start from 0 if you need to start from data preparation
+stop_stage=100
+ngpu=1         # number of gpus ("0" uses cpu, otherwise use gpu)
+seed=1
+debugmode=1
+dumpdir=dump   # directory to dump full features
+N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
+verbose=0      # verbose option
+resume=        # Resume the training from snapshot
+
+# feature configuration
+do_delta=false
+
+train_config=conf/train_li10.yaml
+lm_config=conf/lm.yaml
+decode_config=conf/decode_li10.yaml
+
+# rnnlm related
+use_lm=false
+lm_resume=        # specify a snapshot file to resume LM training
+lmtag=            # tag for managing LMs
+
+# decoding parameter
+recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.best' or 'model.loss.best'
 
 # exp tag
 tag="" # tag for managing experiments.
+
+# Generate configs with local/prepare_experiment_configs.py
+langs_config=
+
+if [ $langs_config ]; then
+  # shellcheck disable=SC1090
+  source $langs_config
+else
+  # BABEL TRAIN:
+  # Amharic - 307
+  # Bengali - 103
+  # Cantonese - 101
+  # Javanese - 402
+  # Vietnamese - 107
+  # Zulu - 206
+  # Dutch (CGN) Fake Babel Code - 505
+  # BABEL TEST:
+  # Georgian - 404
+  # Lao - 203
+  babel_langs="307 103 101 402 107 206 505"
+  babel_recog="${babel_langs} 404 203"
+  gp_langs="Arabic Czech French Korean Spanish Thai"
+  gp_recog="${gp_langs}"
+  mboshi_train=false
+  mboshi_recog=true
+  gp_romanized=false
+  ipa_transcript=false
+fi
 
 . utils/parse_options.sh || exit 1;
 
@@ -82,225 +73,226 @@ set -e
 set -u
 set -o pipefail
 
+# Train Directories
 train_set=train
 train_dev=dev
-eval_set=dev
 
-if [ ${stage} -le 0 ]; then
-    ### Task dependent. You have to make data the following preparation part by yourself.
-    ### But you can utilize Kaldi recipes in most cases
-    echo "stage 0: Data preparation"
-    # python babel_prepared.py
-    # utils/data/subsegment_data_dir.sh data/train exp/apr1_OP1_102_conversational/train/segments exp/apr1_OP1_102_conversational/train/text data/train_segmented    
-    # utils/data/subsegment_data_dir.sh data/dev exp/apr1_OP1_102_conversational/dev/segments exp/apr1_OP1_102_conversational/dev/text data/dev_segmented    
-    
-    # python local/data_prep.py ${an4_root} ${KALDI_ROOT}/tools/sph2pipe_v2.5/sph2pipe
+# LM Directories
+if [ -z ${lmtag} ]; then
+    lmtag=$(basename ${lm_config%.*})
+fi
+lmexpname=train_rnnlm_${backend}_${lmtag}
+lmexpdir=exp/${lmexpname}
+lm_train_set=data/local/train.txt
+lm_valid_set=data/local/dev.txt
 
-    for x in dev train; do
-        for f in text wav.scp utt2spk; do
-            sort data/${x}/${f} -o data/${x}/${f}
-        done
-        utils/utt2spk_to_spk2utt.pl data/${x}/utt2spk > data/${x}/spk2utt
-    done
+recog_set=""
+for l in ${babel_recog} ${gp_recog}; do
+  recog_set="eval_${l} ${recog_set}"
+done
+recog_set=${recog_set%% }
+
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
+  echo "stage 0: Setting up individual languages"
+
+  local/setup_languages.sh \
+    --langs "${babel_langs}" \
+    --recog "${babel_recog}" \
+    --gp-langs "${gp_langs}" \
+    --gp-recog "${gp_recog}" \
+    --mboshi-train "${mboshi_train}" \
+    --mboshi-recog "${mboshi_recog}" \
+    --gp-romanized "${gp_romanized}" \
+    --ipa-transcript "${ipa_transcript}"
+  for x in ${train_set} ${train_dev} ${recog_set}; do
+	  sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp
+  done
 fi
 
-feat_tr_dir=${dumpdir}/${train_set}; mkdir -p ${feat_tr_dir}
-feat_dt_dir=${dumpdir}/${train_dev}; mkdir -p ${feat_dt_dir}
-feat_ev_dir=${dumpdir}/${eval_set}; mkdir -p ${feat_ev_dir}
-if [ ${stage} -le 1 ]; then
-    ### Task dependent. You have to design training and dev sets by yourself.
-    ### But you can utilize Kaldi recipes in most cases
-    echo "stage 1: Feature Generation"
+feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
+feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
+  echo "stage 1: Feature extraction"
+  fbankdir=fbank
+  # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
+  for x in ${train_set} ${train_dev} ${recog_set}; do
+    steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj 30 --write_utt2num_frames true \
+        data/${x} exp/make_fbank/${x} ${fbankdir}
+    utils/fix_data_dir.sh data/${x}
+  done
 
-    # Generate the fbank features; by default 80-dimensional fbanks on each frame
-    fbankdir=fbank
-    for x in train dev;do
-        make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \
-            --fs ${fs} \
-            --fmax "${fmax}" \
-            --fmin "${fmin}" \
-            --n_fft ${n_fft} \
-            --n_shift ${n_shift} \
-            --win_length "${win_length}" \
-            --n_mels ${n_mels} \
-            data/${x} \
-            exp/make_fbank/${x} \
-            ${fbankdir}
-    done
+  mv data/${train_set} data/${train_set}_org
+  mv data/${train_dev} data/${train_dev}_org
+  remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_org data/${train_set}
+  remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_org data/${train_dev}
 
-    # make a dev set
-    # XXX L.W., 4.1.2020
-    # utils/subset_data_dir.sh --first data/train 100 data/${train_dev}
-    # n=$(( $(wc -l < data/train/segments) - 100 ))
-    # utils/subset_data_dir.sh --first data/train ${n} data/${train_set}
+  # compute global CMVN
+  compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
+  utils/fix_data_dir.sh data/${train_set}
 
-    # compute global CMVN
-    compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
-
-    # dump features for training
-    dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
-    dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
-    dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        data/${eval_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/eval ${feat_ev_dir}
+  exp_name=$(basename $PWD)
+  # dump features for training
+  if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
+      utils/create_split_dir.pl /export/b{10,11,12,13}/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
+      utils/create_split_dir.pl /export/b{10,11,12,13}/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_dt_dir}/storage
+  elif [ -n "$(hostname | grep -i ifp-40)" ] && [ ! -d ${feat_tr_dir}/storage ]; then
+      utils/create_split_dir.pl /ws/ifp-54_2/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
+      utils/create_split_dir.pl /ws/ifp-54_2/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_tr_dir}/storage
+  elif [ -n "$(hostname | grep -i ifp)" ] && [ ! -d ${feat_tr_dir}/storage ]; then
+      utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
+      utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_tr_dir}/storage
+  fi
+  dump.sh --cmd "$train_cmd" --nj 20 --do_delta ${do_delta} \
+      data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
+  dump.sh --cmd "$train_cmd" --nj 10 --do_delta ${do_delta} \
+      data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
+  for rtask in ${recog_set}; do
+      feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}; mkdir -p ${feat_recog_dir}
+      dump.sh --cmd "$train_cmd" --nj 10 --do_delta ${do_delta} \
+            data/${rtask}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/recog/${rtask} \
+            ${feat_recog_dir}
+  done
 fi
 
 dict=data/lang_1char/${train_set}_units.txt
+nlsyms=data/lang_1char/non_lang_syms.txt
+
 echo "dictionary: ${dict}"
-if [ ${stage} -le 2 ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
     mkdir -p data/lang_1char/
+
+    echo "make a non-linguistic symbol list"
+    # The grep trick prevents grep from returning non-zero value when no special symbol is found,
+    # which would have prematurely ended the script.
+    cut -f 2- -d' ' data/${train_set}/text | tr " " "\n" | sort | uniq | { grep "<" || true; } > ${nlsyms}
+    cat ${nlsyms}
+
+    echo "make a dictionary"
     echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
-    text2token.py -s 1 -n 1 data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
-    | sort | uniq | grep -v -e '^\s*$' | awk '{print $0 " " NR+1}' >> ${dict}
+    text2token.py -s 1 -n 1 -l ${nlsyms} data/${train_set}/text | cut -f 2- -d" " | tr " " "\n" \
+    | sort | uniq | grep -v -e '^\s*$' | grep -v '<unk>' | awk '{print $0 " " NR+1}' >> ${dict}
     wc -l ${dict}
 
-    # make json labels
-    data2json.sh --feat ${feat_tr_dir}/feats.scp \
+    echo "make json files"
+    data2json.sh --feat ${feat_tr_dir}/feats.scp --nlsyms ${nlsyms} \
          data/${train_set} ${dict} > ${feat_tr_dir}/data.json
-    data2json.sh --feat ${feat_dt_dir}/feats.scp \
+    data2json.sh --feat ${feat_dt_dir}/feats.scp --nlsyms ${nlsyms} \
          data/${train_dev} ${dict} > ${feat_dt_dir}/data.json
-    data2json.sh --feat ${feat_ev_dir}/feats.scp \
-         data/${eval_set} ${dict} > ${feat_ev_dir}/data.json
+    for rtask in ${recog_set}; do
+        feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
+        data2json.sh --feat ${feat_recog_dir}/feats.scp \
+            --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
+    done
 fi
 
-if [ -z ${tag} ];then
-    expname=${train_set}_${backend}_taco2_r${reduction_factor}_enc${embed_dim}
-    if [ ${econv_layers} -gt 0 ];then
-        expname=${expname}-${econv_layers}x${econv_filts}x${econv_chans}
+
+if ${use_lm}; then
+  lm_train_set=data/local/train.txt
+  lm_valid_set=data/local/dev.txt
+
+  # Make train and valid
+  text2token.py --nchar 1 \
+                --space "<space>" \
+                --non-lang-syms data/lang_1char/non_lang_syms.txt \
+                <(cut -d' ' -f2- data/${train_set}/text | head -100) \
+                > ${lm_train_set}
+
+  text2token.py --nchar 1 \
+                --space "<space>" \
+                --non-lang-syms data/lang_1char/non_lang_syms.txt \
+                <(cut -d' ' -f2- data/${train_dev}/text | head -100) \
+                > ${lm_valid_set}
+
+  ${cuda_cmd} --gpu ${ngpu} ${lmexpdir}/train.log \
+          lm_train.py \
+          --config ${lm_config} \
+          --ngpu ${ngpu} \
+          --backend ${backend} \
+          --verbose 1 \
+          --outdir ${lmexpdir} \
+          --tensorboard-dir tensorboard/${lmexpname} \
+          --train-label ${lm_train_set} \
+          --valid-label ${lm_valid_set} \
+          --resume ${lm_resume} \
+          --dict ${dict}
+fi
+
+
+if [ -z ${tag} ]; then
+    expname=${train_set}_${backend}_$(basename ${train_config%.*})
+    if ${do_delta}; then
+        expname=${expname}_delta
     fi
-    expname=${expname}-${elayers}x${eunits}_dec${dlayers}x${dunits}
-    if [ ${prenet_layers} -gt 0 ];then
-        expname=${expname}_pre${prenet_layers}x${prenet_units}
-    fi
-    if [ ${postnet_layers} -gt 0 ];then
-        expname=${expname}_post${postnet_layers}x${postnet_filts}x${postnet_chans}
-    fi
-    expname=${expname}_${atype}${adim}-${aconv_filts}x${aconv_chans}
-    if ${cumulate_att_w};then
-        expname=${expname}_cm
-    fi
-    if ${use_batch_norm};then
-        expname=${expname}_bn
-    fi
-    if ${use_residual};then
-        expname=${expname}_rs
-    fi
-    if ${use_concate};then
-        expname=${expname}_cc
-    fi
-    if ${use_masking};then
-        expname=${expname}_msk_pw${bce_pos_weight}
-    fi
-    expname=${expname}_do${dropout}_zo${zoneout}_lr${lr}_ep${eps}_wd${weight_decay}_bs$((batchsize*ngpu))
-    if [ ! ${batch_sort_key} = "shuffle" ];then
-        expname=${expname}_sort_by_${batch_sort_key}_mli${maxlen_in}_mlo${maxlen_out}
-    fi
-    expname=${expname}_sd${seed}
 else
     expname=${train_set}_${backend}_${tag}
 fi
 expdir=exp/${expname}
 mkdir -p ${expdir}
-if [ ${stage} -le 3 ];then
-    echo "stage 3: Text-to-speech model training"
-    tr_json=${feat_tr_dir}/data.json
-    dt_json=${feat_dt_dir}/data.json
+
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
+    echo "stage 3: Network Training"
+
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
-        tts_train.py \
-           --backend ${backend} \
-           --ngpu ${ngpu} \
-           --minibatches ${N} \
-           --outdir ${expdir}/results \
-           --tensorboard-dir tensorboard/${expname} \
-           --verbose ${verbose} \
-           --seed ${seed} \
-           --resume ${resume} \
-           --train-json ${tr_json} \
-           --valid-json ${dt_json} \
-           --embed_dim ${embed_dim} \
-           --elayers ${elayers} \
-           --eunits ${eunits} \
-           --econv_layers ${econv_layers} \
-           --econv_chans ${econv_chans} \
-           --econv_filts ${econv_filts} \
-           --dlayers ${dlayers} \
-           --dunits ${dunits} \
-           --prenet_layers ${prenet_layers} \
-           --prenet_units ${prenet_units} \
-           --postnet_layers ${postnet_layers} \
-           --postnet_chans ${postnet_chans} \
-           --postnet_filts ${postnet_filts} \
-           --atype ${atype} \
-           --adim ${adim} \
-           --aconv-chans ${aconv_chans} \
-           --aconv-filts ${aconv_filts} \
-           --cumulate_att_w ${cumulate_att_w} \
-           --use_batch_norm ${use_batch_norm} \
-           --use_concate ${use_concate} \
-           --use_residual ${use_residual} \
-           --use_masking ${use_masking} \
-           --bce_pos_weight ${bce_pos_weight} \
-           --lr ${lr} \
-           --eps ${eps} \
-           --dropout ${dropout} \
-           --zoneout ${zoneout} \
-           --reduction_factor ${reduction_factor} \
-           --weight-decay ${weight_decay} \
-           --batch_sort_key ${batch_sort_key} \
-           --batch-size ${batchsize} \
-           --maxlen-in ${maxlen_in} \
-           --maxlen-out ${maxlen_out} \
-           --epochs ${epochs} \
-           --patience ${patience}
+        asr_train.py \
+        --config ${train_config} \
+        --ngpu ${ngpu} \
+        --backend ${backend} \
+        --outdir ${expdir}/results \
+        --tensorboard-dir tensorboard/${expname} \
+        --debugmode ${debugmode} \
+        --dict ${dict} \
+        --debugdir ${expdir} \
+        --minibatches ${N} \
+        --verbose ${verbose} \
+        --resume ${resume} \
+        --seed ${seed} \
+        --train-json ${feat_tr_dir}/data.json \
+        --valid-json ${feat_dt_dir}/data.json
 fi
 
-outdir=${expdir}/outputs_${model}_th${threshold}_mlr${minlenratio}-${maxlenratio}
-if [ ${stage} -le 4 ];then
+
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Decoding"
-    for sets in ${train_dev} ${eval_set};do
-        [ ! -e  ${outdir}/${sets} ] && mkdir -p ${outdir}/${sets}
-        cp ${dumpdir}/${sets}/data.json ${outdir}/${sets}
-        splitjson.py --parts ${nj} ${outdir}/${sets}/data.json
-        # decode in parallel
-        ${train_cmd} JOB=1:${nj} ${outdir}/${sets}/log/decode.JOB.log \
-            tts_decode.py \
-                --backend ${backend} \
-                --ngpu 0 \
-                --verbose ${verbose} \
-                --out ${outdir}/${sets}/feats.JOB \
-                --json ${outdir}/${sets}/split${nj}utt/data.JOB.json \
-                --model ${expdir}/results/${model} \
-                --threshold ${threshold} \
-                --maxlenratio ${maxlenratio} \
-                --minlenratio ${minlenratio}
-        # concatenate scp files
-        for n in $(seq ${nj}); do
-            cat "${outdir}/${sets}/feats.$n.scp" || exit 1;
-        done > ${outdir}/${sets}/feats.scp
-    done
-fi
+    nj=32
 
-if [ ${stage} -le 5 ];then
-    echo "stage 5: Synthesis"
-    for sets in ${train_dev} ${eval_set};do
-        [ ! -e ${outdir}_denorm/${sets} ] && mkdir -p ${outdir}_denorm/${sets}
-        apply-cmvn --norm-vars=true --reverse=true data/${train_set}/cmvn.ark \
-            scp:${outdir}/${sets}/feats.scp \
-            ark,scp:${outdir}_denorm/${sets}/feats.ark,${outdir}_denorm/${sets}/feats.scp
-        convert_fbank.sh --nj ${nj} --cmd "${train_cmd}" \
-            --fs ${fs} \
-            --fmax "${fmax}" \
-            --fmin "${fmin}" \
-            --n_fft ${n_fft} \
-            --n_shift ${n_shift} \
-            --win_length "${win_length}" \
-            --n_mels ${n_mels} \
-            --iters ${griffin_lim_iters} \
-            ${outdir}_denorm/${sets} \
-            ${outdir}_denorm/${sets}/log \
-            ${outdir}_denorm/${sets}/wav
+    extra_opts=""
+    if ${use_lm}; then
+      extra_opts="--rnnlm ${lmexpdir}/rnnlm.model.best ${extra_opts}"
+    fi
+
+    pids=() # initialize pids
+    for rtask in ${recog_set}; do
+    (
+        decode_dir=decode_${rtask}_$(basename ${decode_config%.*})
+        if ${use_lm}; then
+            decode_dir=${decode_dir}_rnnlm_${lmtag}
+        fi
+        feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
+
+        # split data
+        splitjson.py --parts ${nj} ${feat_recog_dir}/data.json
+
+        #### use CPU for decoding
+        ngpu=0
+
+        ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
+            asr_recog.py \
+            --config ${decode_config} \
+            --ngpu ${ngpu} \
+            --backend ${backend} \
+            --recog-json ${feat_recog_dir}/split${nj}utt/data.JOB.json \
+            --result-label ${expdir}/${decode_dir}/data.JOB.json \
+            --model ${expdir}/results/${recog_model}  \
+            ${extra_opts}
+
+        score_sclite.sh --wer true --nlsyms ${nlsyms} ${expdir}/${decode_dir} ${dict}
+
+    ) &
+    pids+=($!) # store background pids
     done
+    i=0; for pid in "${pids[@]}"; do wait ${pid} || ((++i)); done
+    [ ${i} -gt 0 ] && echo "$0: ${i} background jobs are failed." && false
+    echo "Finished"
 fi
