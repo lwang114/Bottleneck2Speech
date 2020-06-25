@@ -8,6 +8,7 @@ from AudioModels import *
 import torchvision.transforms as transforms
 from traintest_ae import *
 from audio_waveform_dataset import *
+from mscoco_segmented_audio_caption_dataset import *
 import json
 import numpy as np
 import random
@@ -32,7 +33,8 @@ parser.add_argument('--save_features', action='store_true', help='Save the hidde
 parser.add_argument('--exp_dir', type=str, default=None, help='Experimental directory')
 parser.add_argument('--date', type=str, default='', help='Date of the experiment')
 parser.add_argument('--feat_type', type=str, default='last', choices=['mean', 'last', 'resample', 'discrete'], help='Method to extract the hidden phoneme representation')
-
+parser.add_argument('--eval_phone_recognition', action='store_true', help='Perform phone recognition during validation')
+parser.add_argument('--downsample_rate', type=int, default=1, help='Downsampling rate of the hidden representation')
 args = parser.parse_args()
 
 if args.exp_dir is None:
@@ -41,10 +43,15 @@ if args.exp_dir is None:
   else:
     args.exp_dir = 'exp/%s_%s_%s_lr_%.5f' % (args.audio_model, args.dataset_train, args.optim, args.lr)
 
+if not os.path.isdir('exp'):
+  os.mkdir('exp')
+if not os.path.isdir(args.exp_dir):
+  os.mkdir(args.exp_dir)
+
 # TODO
 feat_configs = {}
 
-tasks = [0, 1]
+tasks = [2]
 #------------------#
 # Network Training #
 #------------------#
@@ -55,19 +62,25 @@ if 0 in tasks:
     audio_sequence_file_test = '../data/TIMIT/TIMIT_test_phone_sequence_pytorch.txt'
     args.class2id_file = '../data/TIMIT/TIMIT_train_phone2ids.json'
   elif args.dataset_train == 'mscoco_train':
-    audio_root_path = '/home/lwang114/data/mscoco/audio/train2014/wav/'
-    audio_sequence_file_train = '../data/mscoco_phone_sequence_train.txt' 
-    audio_sequence_file_test = '../data/mscoco_phone_sequence_test.txt' 
-    args.class2id_file = '../data/mscoco_phone_sequence_phone2id.json'
+    audio_root_path = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/train2014/wav/'
+    audio_sequence_file_train = '../../data/mscoco_phone_sequence_train.txt' 
+    audio_sequence_file_test = '../../data/mscoco_phone_sequence_test.txt' 
+    sequence_info_file = '/home/lwang114/data/mscoco/audio/train2014/train_2014.sqlite3' # TODO Test on the validation set rather than on the random split
+    args.class2id_file = '../../data/mscoco_phone2id.json'
   elif args.dataset_train == 'babel':
     audio_root_path = '/ws/ifp-53_1/hasegawa/data/babel/' 
-    audio_sequence_file_train = '../data/babel_phone_sequence_train.txt'
-    audio_sequence_file_test = '../data/babel_phone_sequence_test.txt'
+    audio_sequence_file_train = '../../data/babel_phone_sequence_train.txt'
+    audio_sequence_file_test = '../../data/babel_phone_sequence_test.txt'
   # TODO GlobalPhone
 
-  # TODO Implement a phone recognizer to evaluate performance 
+  if args.audio_model == 'ae':
+    args.downsample_rate = 16
+
   trainset = AudioWaveformDataset(audio_root_path, audio_sequence_file_train, feat_configs=feat_configs)
-  testset = AudioWaveformDataset(audio_root_path, audio_sequence_file_test, feat_configs=feat_configs) 
+  if args.eval_phone_recognition:
+    testset = MSCOCOSegmentCaptionDataset(audio_root_path, audio_sequence_file_test, sequence_info_file, phone2idx_file=args.class2id_file, feat_configs=feat_configs) # TODO Need to make this more general 
+  else:
+    testset = AudioWaveformDataset(audio_root_path, audio_sequence_file_test, feat_configs=feat_configs) 
     
   train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
   test_loader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False) 
@@ -79,17 +92,14 @@ if 0 in tasks:
 # Frame-Level Feature Extraction #
 #--------------------------------#
 if 1 in tasks:
-  # TODO Specify default pretrain file
-  # if args.pretrain_model_file is None: 
-  if args.dataset_train == 'mscoco_train':
-    audio_root_path = '/home/lwang114/data/mscoco/audio/val2014/wav/'
-    # audio_sequence_file = '../data/mscoco/mscoco20k_phone_info.json'
-    audio_sequence_file = '../data/mscoco2k_phone_info.json'
-    
-    with open(args.class2id_file, 'r') as f:
-      class2idx = json.load(f)
-    args.n_class = len(class2idx.keys())
+  if args.pretrain_model_file is None: # XXX 
+    args.pretrain_model_file = 'exp/ae_mscoco_train_sgd_lr_0.00100_june20/audio_model.0.pth' 
 
+  if args.dataset_train == 'mscoco_train':
+    audio_root_path = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k/wav/' 
+    # audio_sequence_file = '../data/mscoco/mscoco20k_phone_info.json'
+    audio_sequence_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k/mscoco2k_wav.scp'    
+    feat_configs = {'dataset': 'mscoco2k'} # XXX
     testset = AudioWaveformDataset(audio_root_path, audio_sequence_file, feat_configs)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False)
   else:
@@ -102,20 +112,18 @@ if 1 in tasks:
     raise NotImplementedError
 
   args.save_features = True
+  args.eval_phone_recognition = False
   _ = validate(audio_model, test_loader, args)
 
 #-----------------------------------------#
 # Frame to Phone Level Feature Conversion #
 #-----------------------------------------#
-if 3 in tasks:
+if 2 in tasks:
   ffeats_npz = np.load(args.exp_dir + '/embed1_all.npz') 
-  weight_dict = np.load(args.exp_dir + '/classifier_weights.npz')
-  W = weight_dict['weight'] 
-  b = weight_dict['bias']
   if args.dataset_test == 'mscoco20k' or args.dataset_test == 'mscoco2k':
     feat_type = args.feat_type
     skip_ms = 10. # in ms
-    audio_sequence_file = '../data/mscoco/%s_phone_info.json' % args.dataset_test
+    audio_sequence_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/%s/%s_phone_info.json' % (args.dataset_test, args.dataset_test)
     with open(audio_sequence_file, 'r') as f:
       audio_seqs = json.load(f) 
   else:
@@ -128,10 +136,14 @@ if 3 in tasks:
   for feat_id in feat_ids:
     print(feat_id)
     ffeat = ffeats_npz[feat_id]
+    if args.audio_model == 'ae':
+      ds_rate = 16
+      ffeat = ffeat.T
     audio_seq = audio_seqs[feat_id]
     sfeats = []
     start_phn = 0
     for word in audio_seq['data_ids']:
+      print(word)
       for phn in word[2]:
         # Convert each time step from ms to MFCC frames in the synthetic captions
         start_ms, end_ms = phn[1], phn[2]
@@ -144,8 +156,6 @@ if 3 in tasks:
           continue
         if start_frame > end_frame:
           print('empty segment: ', phn[0], start_frame, end_frame)
-        if args.audio_model == 'ae':
-          ds_rate = 16
 
         sfeat = ffeat[int(start_frame_local/ds_rate):int(end_frame_local/ds_rate)+1]
         start_phn += end_frame - start_frame + 1 
@@ -159,9 +169,6 @@ if 3 in tasks:
           sfeats.append(mean_feat)
         elif feat_type == 'last':
           sfeats.append(sfeat[-1])
-        elif feat_type == 'discrete':
-          scores = W @ np.mean(sfeat, axis=0) + b
-          sfeats.append(np.argmax(scores[1:]))
         else:
           raise ValueError('Feature type not found')
       
@@ -169,11 +176,4 @@ if 3 in tasks:
         pfeats[feat_id] = sfeats
       else:
         pfeats[feat_id] = np.stack(sfeats, axis=0) 
-  if feat_type == 'discrete':
-    with open('%s/phone_features_%s.txt' % (args.exp_dir, args.feat_type), 'w') as f:
-      for feat_id in sorted(pfeats, key=lambda x:int(x.split('_')[-1])):
-        feat = pfeats[feat_id]
-        feat = [str(phn) for phn in feat]
-        f.write(' '.join(feat) + '\n') 
-  else:
-    np.savez('%s/phone_features_%s.npz' % (args.exp_dir, args.feat_type), **pfeats) 
+  np.savez('%s/phone_features_%s.npz' % (args.exp_dir, args.feat_type), **pfeats) 

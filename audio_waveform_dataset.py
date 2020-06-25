@@ -32,21 +32,29 @@ class AudioWaveformDataset(Dataset):
     self.skip_ms = feat_configs.get('skip_size', 10)
     self.window_ms = feat_configs.get('window_len', 25)
     compute_cmvn = feat_configs.get('compute_cmvn', False)
+    self.dataset = feat_configs.get('dataset', '')
     self.audio_filenames = []
     self.ES = -1
     # XXX
     self.max_nframes = feat_configs.get('max_num_frames', 1024)
 
     self.audio_root_path = audio_root_path
-    with open(audio_sequence_file, 'r') as f:
-      i = 0
-      for line in f:
-        # XXX
-        if i > 16:
-          break
-        i += 1 
-        audio_info = line.strip().split()         
-        self.audio_filenames.append(audio_info[0])
+    if self.dataset == 'mscoco2k' or self.dataset == 'mscoco20k':
+      with open(audio_sequence_file, 'r') as f:
+        i = 0
+        for line in f:
+          audio_info = line.strip().split()
+          self.audio_filenames.append(audio_info[1].split('/')[-1])
+    else:
+      with open(audio_sequence_file, 'r') as f:
+        i = 0
+        for line in f:
+          # XXX
+          # if i > 15:
+          #   break
+          # i += 1 
+          audio_info = line.strip().split()         
+          self.audio_filenames.append(audio_info[0])
 
   def __len__(self):
     return len(self.audio_filenames)
@@ -75,9 +83,7 @@ class AudioWaveformDataset(Dataset):
     mfcc /= max(np.sqrt(np.var(mfcc)), EPS)
     nframes = min(mfcc.shape[1], self.max_nframes)
     mfcc = self.convert_to_fixed_length(mfcc)
-    mfcc = mfcc.T
 
-    # labels = [self.phone2idx[phone_seq[i]] for i in range(min(self.max_nphones, len(phone_seq)))]
     # TODO 
     # if self.compute_cmvn:
     return torch.FloatTensor(mfcc), nframes

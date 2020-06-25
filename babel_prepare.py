@@ -181,8 +181,8 @@ class BabelKaldiPreparer:
             if audio_fn.split('.')[0] == transcript_fn.split('.')[0]:
               break 
           # XXX
-          if i > 200:
-            continue
+          # if i > 200:
+          #   continue
           i += 1
             
           if self.create_dev:

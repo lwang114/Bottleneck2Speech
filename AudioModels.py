@@ -3,34 +3,37 @@ import torch.nn.functional as F
 
 # TODO
 class ConvAutoEncoder(nn.Module):
-  def __init__(self, input_dim=14, embedding_dim=1024):
+  def __init__(self, input_dim=40, embedding_dim=512):
     super(ConvAutoEncoder, self).__init__()
     self.embedding_dim = embedding_dim
     self.enc = nn.Sequential(
       nn.BatchNorm2d(1),
-      nn.Conv2d(1, 128, kernel_size=(input_dim, 1), stride=(1,1), padding=(0,0)), # self.conv1 = nn.Conv2d(1, 128, kernel_size=(40,1), stride=(1,1), padding=(0,0)),
-      nn.ReLU(),
+      nn.Conv2d(1, 128, kernel_size=(input_dim, 1), stride=(1,2), padding=(0,0)),
+      nn.LeakyReLU(negative_slope=0.2),
       nn.Conv2d(128, 256, kernel_size=(1,11), stride=(1,2), padding=(0,5)),
-      nn.ReLU(),
+      nn.LeakyReLU(negative_slope=0.2),
       nn.Conv2d(256, 512, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
-      nn.ReLU(),
-      nn.Conv2d(512, 512, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
-      nn.Conv2d(512, embedding_dim, kernel_size=(1,17), stride=(1,2), padding=(0,8))
+      nn.LeakyReLU(negative_slope=0.2),
+      nn.Conv2d(512, embedding_dim, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
     )
     self.dec = nn.Sequential(
-      nn.ConvTranspose2d(embedding_dim, 512, kernel_size=(1,17), stride=(1,2), padding=(0,8)),      
-      nn.ConvTranspose2d(512, 256, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
-      nn.ConvTranspose2d(256, 128, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
-      nn.ConvTranspose2d(128, 1, kernel_size=(1,11), stride=(1,2), padding=(0,8)) 
+      nn.ReLU(),
+      nn.ConvTranspose2d(embedding_dim, 512, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.ReLU(),
+      nn.ConvTranspose2d(512, 256, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.ReLU(),
+      nn.ConvTranspose2d(256, 128, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.ReLU(),
+      nn.ConvTranspose2d(128, input_dim, kernel_size=(1,12), stride=(1,2), padding=(0,5)) 
     )
 
   def forward(self, x, save_features=False):
     if x.dim() == 3:
         x = x.unsqueeze(1)
     z = self.enc(x)
-    x_r = self.dec(x).squeeze(1)
+    x_r = self.dec(z).squeeze(2)
     if save_features:
-      return z, x_r
+      return z.squeeze(-2), x_r
     else:
       return x_r
 

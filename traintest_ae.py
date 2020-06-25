@@ -7,7 +7,7 @@ import sys
 import json
 import os
 from torch.autograd import Variable
-
+from sklearn.svm import LinearSVC
 
 def train(audio_model, train_loader, test_loader, args, device_id=0): 
   if torch.cuda.is_available():
@@ -36,6 +36,7 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
   audio_model.train()
 
   running_loss = 0.
+  best_val_loss = 0.
   best_acc = 0.
   criterion = nn.MSELoss()
   for epoch in range(args.n_epoch):
@@ -58,7 +59,6 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
       
       optimizer.zero_grad()
       outputs = audio_model(inputs)
-      # print(nframes.data.numpy())
       # print(nphones.data.numpy())
 
       # MSE loss
@@ -79,8 +79,8 @@ def train(audio_model, train_loader, test_loader, args, device_id=0):
     val_loss = validate(audio_model, test_loader, args)
     
     # Save the weights of the model
-    if val_loss > best_loss:
-      best_loss = val_loss
+    if val_loss > best_val_loss:
+      best_val_loss = val_loss
       if not os.path.isdir('%s' % exp_dir):
         os.mkdir('%s' % exp_dir)
 
@@ -100,7 +100,7 @@ def validate(audio_model, test_loader, args):
   total = 0
   begin_time = time.time()
   embed1_all = {}
-  criterion = MSELoss()
+  criterion = nn.MSELoss()
   
   n_print_step = 20
   nframes_all = []
@@ -110,28 +110,76 @@ def validate(audio_model, test_loader, args):
       # print(i)
       # if i < 619:
       #   continue
-
-      audios, nframes = audio_input
-      # XXX
+      if args.eval_phone_recognition:
+        audios, labels, segmentations = audio_input
+      else:
+        audios, _ = audio_input
       audios = Variable(audios)
       if torch.cuda.is_available():
         audios = audios.cuda()
 
-      embeds1, outputs = audio_model(audios, save_features=True)
-
+      embeds1, outputs = audio_model(audios, save_features=True) 
       loss += len(audios) / float(args.batch_size) * criterion(outputs, audios).data.cpu().numpy() 
       total += len(audios) / float(args.batch_size)       
       if args.save_features:
         for i_b in range(embeds1.size()[0]):
           feat_id = 'arr_'+str(i * args.batch_size + i_b)
-          embed1_all[feat_id] = embeds1[i_b].data.cpu().numpy()     
+          embed1_all[feat_id] = embeds1[i_b].data.cpu().numpy() 
 
       if (i + 1) % n_print_step == 0:
-        print('Takes %.3f s to process %d batches, MSE loss: %.5f' % loss / (i + 1))
+        print('Takes %.3f s to process %d batches, MSE loss: %.5f' % (time.time() - begin_time, i, loss / (i + 1)))
     
   if not os.path.isdir('%s' % args.exp_dir):
     os.mkdir('%s' % args.exp_dir)
 
   np.savez(args.exp_dir+'/embed1_all.npz', **embed1_all) 
-
+  if args.eval_phone_recognition:
+    evaluate_phone_recognition(embed1_all, segmentations_all, labels_all, args)
   return  loss / total
+
+def evaluate_phone_recognition(embeds, segmentations, labels, args):
+  # Break the sentence features into phone features
+  X = []
+  y = []
+  for feat_id in sorted(embeds, key=lambda x:int(x.split('_')[-1])): 
+    embed = embeds[feat_id]
+    segmentation = np.where(segmentations[feat_id] != 0)[0]
+    label = labels[feat_id]
+    for i_seg, (begin, end) in enumerate(zip(segmentation[:-1], segmentation[1:])):
+      begin, end = int(begin / args.downsample_rate), int(end / args.downsample_rate) + 1
+      X.append(np.mean(embed[:, begin:end], axis=1))
+      y.append(label[i_seg]) 
+  X, y = np.asarray(X), np.asarray(y)
+  if not args.class2id_file:
+    n_class = np.max(y)
+    class2id = {c:c for c in range(n_class)}
+  else:
+    with open(args.class2id_file, 'r') as f:
+      class2id = json.load(f)
+    n_class = len(class2id)
+
+  # Train an SVM with the features and report training accuracy
+  clf = LinearSVC()
+  clf.fit(X, y)
+  y_pred = clf.predict(X)
+  
+  # Print class accuracy
+  correct = 0
+  total = 0
+  class_correct = np.zeros((n_class,))
+  class_total = np.zeros((n_class,))
+  for i in range(len(y)):
+    correct += (y[i] == y_pred[i])
+    total += 1
+    class_correct[y[i]] += (y[i] == y_pred[i])
+    class_total[y[i]] += 1
+
+  accs = class_correct / np.maximum(class_total, 1)
+  top_10_classes = sorted(class2id, key=lambda x:accs[class2id[x]], reverse=True)[:10]
+  top_10_accs = [accs[class2id[c]] for c in top_10_classes]
+  for c, acc in zip(top_10_classes, top_10_accs):
+    print('%s: %d %%' % (c, acc * 100))
+
+  with open(args.exp_dir + '/phone_error_rates.txt', 'w') as f:
+    for c in class2id:
+      f.write('%s: %d %%' % (c, class_correct[class2id[c]] / np.maximum(class_total[class2id[c]], 1) * 100))
