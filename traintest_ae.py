@@ -100,6 +100,8 @@ def validate(audio_model, test_loader, args):
   total = 0
   begin_time = time.time()
   embed1_all = {}
+  segmentations_all = {}
+  labels_all = {}
   criterion = nn.MSELoss()
   
   n_print_step = 20
@@ -121,10 +123,13 @@ def validate(audio_model, test_loader, args):
       embeds1, outputs = audio_model(audios, save_features=True) 
       loss += len(audios) / float(args.batch_size) * criterion(outputs, audios).data.cpu().numpy() 
       total += len(audios) / float(args.batch_size)       
-      if args.save_features:
+      if args.save_features or args.eval_phone_recognition:
         for i_b in range(embeds1.size()[0]):
           feat_id = 'arr_'+str(i * args.batch_size + i_b)
           embed1_all[feat_id] = embeds1[i_b].data.cpu().numpy() 
+          if args.eval_phone_recognition:
+            segmentations_all[feat_id] = segmentations[i_b].data.cpu().numpy()
+            labels_all[feat_id] = labels[i_b].data.cpu().numpy()
 
       if (i + 1) % n_print_step == 0:
         print('Takes %.3f s to process %d batches, MSE loss: %.5f' % (time.time() - begin_time, i, loss / (i + 1)))
@@ -143,7 +148,7 @@ def evaluate_phone_recognition(embeds, segmentations, labels, args):
   y = []
   for feat_id in sorted(embeds, key=lambda x:int(x.split('_')[-1])): 
     embed = embeds[feat_id]
-    segmentation = np.where(segmentations[feat_id] != 0)[0]
+    segmentation = np.nonzero(segmentations[feat_id])[0]
     label = labels[feat_id]
     for i_seg, (begin, end) in enumerate(zip(segmentation[:-1], segmentation[1:])):
       begin, end = int(begin / args.downsample_rate), int(end / args.downsample_rate) + 1

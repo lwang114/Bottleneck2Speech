@@ -16,7 +16,7 @@ import random
 random.seed(1)
 np.random.seed(1)
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--momentum', type=float, default=0.9)
@@ -51,7 +51,7 @@ if not os.path.isdir(args.exp_dir):
 # TODO
 feat_configs = {}
 
-tasks = [2]
+tasks = [0]
 #------------------#
 # Network Training #
 #------------------#
@@ -73,8 +73,8 @@ if 0 in tasks:
     audio_sequence_file_test = '../../data/babel_phone_sequence_test.txt'
   # TODO GlobalPhone
 
-  if args.audio_model == 'ae':
-    args.downsample_rate = 16
+  if args.audio_model == 'ae': # XXX
+    args.downsample_rate = 2
 
   trainset = AudioWaveformDataset(audio_root_path, audio_sequence_file_train, feat_configs=feat_configs)
   if args.eval_phone_recognition:

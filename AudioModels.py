@@ -3,28 +3,38 @@ import torch.nn.functional as F
 
 # TODO
 class ConvAutoEncoder(nn.Module):
-  def __init__(self, input_dim=40, embedding_dim=512):
+  def __init__(self, input_dim=40, embedding_dim=128):
     super(ConvAutoEncoder, self).__init__()
     self.embedding_dim = embedding_dim
     self.enc = nn.Sequential(
       nn.BatchNorm2d(1),
-      nn.Conv2d(1, 128, kernel_size=(input_dim, 1), stride=(1,2), padding=(0,0)),
-      nn.LeakyReLU(negative_slope=0.2),
-      nn.Conv2d(128, 256, kernel_size=(1,11), stride=(1,2), padding=(0,5)),
-      nn.LeakyReLU(negative_slope=0.2),
-      nn.Conv2d(256, 512, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
-      nn.LeakyReLU(negative_slope=0.2),
-      nn.Conv2d(512, embedding_dim, kernel_size=(1,17), stride=(1,2), padding=(0,8)),
+      nn.Conv2d(1, 128, kernel_size=(input_dim, 5), stride=(1,1), padding=(0,2)),
+      # nn.LeakyReLU(negative_slope=0.2),
+      nn.ReLU(),
+      nn.BatchNorm2d(128),
+      nn.Conv2d(128, 128, kernel_size=(1,5), stride=(1,1), padding=(0,2)),
+      # nn.LeakyReLU(negative_slope=0.2),
+      nn.ReLU(),
+      nn.BatchNorm2d(128),
+      nn.Conv2d(128, 128, kernel_size=(1,5), stride=(1,1), padding=(0,2)),
+      # nn.LeakyReLU(negative_slope=0.2),
+      nn.ReLU(),
+      nn.BatchNorm2d(128),
+      nn.Conv2d(128, embedding_dim, kernel_size=(1,5), stride=(1,2), padding=(0,2)), 
     )
     self.dec = nn.Sequential(
       nn.ReLU(),
-      nn.ConvTranspose2d(embedding_dim, 512, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.BatchNorm2d(embedding_dim),
+      nn.ConvTranspose2d(embedding_dim, 128, kernel_size=(1,6), stride=(1,2), padding=(0,2)),
       nn.ReLU(),
-      nn.ConvTranspose2d(512, 256, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.BatchNorm2d(128),
+      nn.ConvTranspose2d(128, 128, kernel_size=(1,5), stride=(1,1), padding=(0,2)),
       nn.ReLU(),
-      nn.ConvTranspose2d(256, 128, kernel_size=(1,18), stride=(1,2), padding=(0,8)),
+      nn.BatchNorm2d(128),
+      nn.ConvTranspose2d(128, 128, kernel_size=(1,5), stride=(1,1), padding=(0,2)),
       nn.ReLU(),
-      nn.ConvTranspose2d(128, input_dim, kernel_size=(1,12), stride=(1,2), padding=(0,5)) 
+      nn.BatchNorm2d(128),
+      nn.ConvTranspose2d(128, input_dim, kernel_size=(1,5), stride=(1,1), padding=(0,2)) 
     )
 
   def forward(self, x, save_features=False):
