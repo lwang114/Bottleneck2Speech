@@ -9,7 +9,7 @@
 
 # general configuration
 backend=pytorch
-stage=5        # start from 0 if you need to start from data preparation
+stage=0        # start from 0 if you need to start from data preparation
 stop_stage=100
 ngpu=1         # number of gpus ("0" uses cpu, otherwise use gpu)
 seed=1
@@ -64,7 +64,7 @@ else
   mscoco_train=true
   mscoco_recog=true
   gp_romanized=false
-  ipa_transcript=false
+  ipa_transcript=true
 fi
 
 . utils/parse_options.sh || exit 1;

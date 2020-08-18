@@ -53,27 +53,28 @@ class MSCOCOKaldiPreparer:
       with open(self.split_file, 'r') as f:
         test_ids = [i for i, line in enumerate(f.readlines()) if int(line)] 
     else:
-      subdirs = [self.exp_root + 'mscoco/train']
+      if self.split_file:
+        subdirs = [self.exp_root + 'mscoco/train', self.exp_root + 'mscoco/dev', self.exp_root + 'mscoco/eval']
+      else:
+        subdirs = [self.exp_root + 'mscoco/train']
       test_ids = []
 
     if not os.path.isdir(self.exp_root + 'mscoco'):
       os.mkdir(self.exp_root + 'mscoco/')
       os.mkdir(self.exp_root + 'mscoco/wav/')
-      if self.split_file:
-        os.mkdir(self.exp_root + 'mscoco/train')
-        os.mkdir(self.exp_root + 'mscoco/test')
-      else: 
-        os.mkdir(self.exp_root + 'mscoco/train')
+      os.mkdir(self.exp_root + 'mscoco/train')
+      os.mkdir(self.exp_root + 'mscoco/dev')
+      os.mkdir(self.exp_root + 'mscoco/eval')
 
     for x in subdirs:
       with open(os.path.join(x, 'text'), 'w') as text_f,\
            open(os.path.join(x, 'wav.scp'), 'w') as wav_scp_f,\
-           open(os.path.join(x, 'utt2spk'), 'w') as utt2spk_f,\
-           open(os.path.join(x, 'segments'), 'w') as segment_f:
+           open(os.path.join(x, 'utt2spk'), 'w') as utt2spk_f:
+           # open(os.path.join(x, 'segments'), 'w') as segment_f:
         text_f.truncate()
         wav_scp_f.truncate()
         utt2spk_f.truncate()
-        segment_f.truncate()
+        # segment_f.truncate()
 
         for i, pair_id in enumerate(sorted(self.pair_info, key=lambda x:int(x.split('_')[-1]))):
           # XXX
@@ -84,8 +85,7 @@ class MSCOCOKaldiPreparer:
           audio_fns = []
           segments = []
           for data_id in pair['data_ids']:
-            # Convert caption into phones in IPA
-            
+            # Convert caption into phones in IPA 
             audio_fn = '_'.join(data_id[1].split('_')[:-1]) 
             audio_fns.append(audio_fn)
           
@@ -103,11 +103,11 @@ class MSCOCOKaldiPreparer:
             utt2spk_f.write('%s %s\n' % (utt_id, utt_id))
 
 if __name__ == '__main__':
-  json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k/mscoco2k_concept_info.json'
+  json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco_synthetic_imbalanced/mscoco_subset_1300k_concept_info_power_law_1.json' 
   raw_data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/val2014/wav/' 
-  data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k' # '/home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
+  data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco_synthetic_imbalanced' # '/home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
   exp_root = '/ws/ifp-53_1/hasegawa/tools/espnet/egs/discophone/ifp_lwang114/data/' # 'data/'
   g2p_root = '/ws/ifp-53_1/hasegawa/tools/espnet/egs/discophone/ifp_lwang114/g2ps/models/'
   preproc = MSCOCOKaldiPreparer(json_file, g2p_root)
-  preproc.generate_synthetic_wavfiles(raw_data_root, data_root)
+  # preproc.generate_synthetic_wavfiles(raw_data_root, data_root)
   preproc.prepare(data_root, exp_root) 
