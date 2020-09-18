@@ -4,6 +4,7 @@ import librosa
 from scipy.io import wavfile
 from copy import deepcopy
 import json
+import shutil
 
 class MSCOCOKaldiPreparer:
   def __init__(self, json_file, g2p_root, split_file=None):
@@ -104,12 +105,20 @@ class MSCOCOKaldiPreparer:
             wav_scp_f.write('%s %s\n' % (utt_id, os.path.join(data_root, 'wav', audio_fn_concat + '.wav')))
             utt2spk_f.write('%s %s\n' % (utt_id, utt_id))
 
+    if not self.split_file:
+      for x in ['dev', 'eval']:
+        for fn in ['text', 'wav.scp', 'utt2spk']:
+          if not os.path.isdir('{}/{}'.format(exp_root, x)):
+            os.mkdir('{}/{}'.format(exp_root, x))
+          print(exp_root+x+fn)
+          shutil.copyfile('{}/{}'.format(subdirs[0], fn), '{}/mscoco/{}/{}'.format(exp_root, x, fn))
+            
 if __name__ == '__main__':
   import argparse
   parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument('--dataset', '-d', choices={'mscoco2k', 'mscoco_synthetic_imbalanced'}, help='Dataset used')
   args = parser.parse_args()
-  data_root = '/home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
+  data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/{}'.format(args.dataset) # /home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
   if args.dataset == 'mscoco2k':
     json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k/mscoco2k_concept_info.json'
   elif args.dataset == 'mscoco_synthetic_imbalanced':
