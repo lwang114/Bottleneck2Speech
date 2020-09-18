@@ -29,18 +29,19 @@ class MSCOCOKaldiPreparer:
       audio_fns = []
       segments = []
       dur = 0
+      # print('Example {}'.format(i))
       for c, data_id in zip(pair['concepts'], pair['data_ids']):
         audio_fn = '_'.join(data_id[1].split('_')[:-1]) 
         begin_ms, end_ms = data_id[2], data_id[3]
         dur += end_ms - begin_ms 
         audio_fns.append(audio_fn)
-        
         fs, y = wavfile.read(self.raw_data_root + audio_fn + '.wav')
-        print(y.shape)
+        if '448151_39985_Bronwen_None_1-1' in audio_fn:
+          print(audio_fn, y.shape)
         begin, end = int(begin_ms * fs / 1000), int(end_ms * fs / 1000)
         seg = y[begin:end]
         segments.append(seg)
-
+      
       y_concat = np.concatenate(segments) 
       audio_fn_concat = '_'.join(audio_fns)
       wavfile.write(os.path.join(data_root, 'wav', audio_fn_concat + '.wav'), fs, y_concat)
@@ -92,7 +93,8 @@ class MSCOCOKaldiPreparer:
           utt_id = 'arr_%06d' % i  
           caption = ' '.join(pair['concepts']) 
           audio_fn_concat = '_'.join(audio_fns)
-                    
+          print(caption)
+
           if i in test_ids and x.split('/')[-1] == 'test':
             text_f.write('%s %s\n' % (utt_id, caption))
             wav_scp_f.write('%s %s\n' % (utt_id, os.path.join(data_root, 'wav', audio_fn_concat + '.wav')))
@@ -103,10 +105,20 @@ class MSCOCOKaldiPreparer:
             utt2spk_f.write('%s %s\n' % (utt_id, utt_id))
 
 if __name__ == '__main__':
-  json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco_synthetic_imbalanced/mscoco_subset_1300k_concept_info_power_law_1.json' 
+  import argparse
+  parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser.add_argument('--dataset', '-d', choices={'mscoco2k', 'mscoco_synthetic_imbalanced'}, help='Dataset used')
+  args = parser.parse_args()
+  data_root = '/home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
+  if args.dataset == 'mscoco2k':
+    json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco2k/mscoco2k_concept_info.json'
+  elif args.dataset == 'mscoco_synthetic_imbalanced':
+    json_file = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco_synthetic_imbalanced/mscoco_subset_1300k_concept_info_power_law_1.json' 
+  else:
+    raise ValueError('Invalid dataset')
+  
   raw_data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/val2014/wav/' 
-  data_root = '/ws/ifp-53_2/hasegawa/lwang114/data/mscoco/mscoco_synthetic_imbalanced' # '/home/lwang114/spring2020/SeeSegmentAlign/acoustic_embedders/Bottleneck2Speech/data/mscoco'
-  exp_root = '/ws/ifp-53_1/hasegawa/tools/espnet/egs/discophone/ifp_lwang114/data/' # 'data/'
+  exp_root = '/ws/ifp-53_1/hasegawa/tools/espnet/egs/discophone/ifp_lwang114/data/' 
   g2p_root = '/ws/ifp-53_1/hasegawa/tools/espnet/egs/discophone/ifp_lwang114/g2ps/models/'
   preproc = MSCOCOKaldiPreparer(json_file, g2p_root)
   # preproc.generate_synthetic_wavfiles(raw_data_root, data_root)
