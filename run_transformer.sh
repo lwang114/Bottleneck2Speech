@@ -93,7 +93,7 @@ for l in ${babel_recog} ${gp_recog}; do
 done
 
 if ${mscoco_recog}; then
-  recog_set="mscoco/eval"
+  recog_set="eval"
 fi
 
 recog_set=${recog_set%% }
@@ -124,11 +124,11 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   echo "stage 1: Feature extraction"
   fbankdir=fbank
   # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-  for x in ${train_set} ${train_dev} ${recog_set}; do
+  for x in ${recog_set} ${train_dev} ${train_set}; do
     nj=30
-    # XXX nj=30
+    # XXX Already done
     steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
-        data/${x} exp/make_fbank/${x} ${fbankdir}
+    data/${x} exp/make_fbank/${x} ${fbankdir}
     utils/fix_data_dir.sh data/${x}
   done
 
@@ -157,8 +157,8 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   # XXX nj=20
   dump.sh --cmd "$train_cmd" --nj 20 --do_delta ${do_delta} \
       data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
-  # XXX nj=10
-  dump.sh --cmd "$train_cmd" --nj 10 --do_delta ${do_delta} \
+  # XXX nj=20
+  dump.sh --cmd "$train_cmd" --nj 20 --do_delta ${do_delta} \
       data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
   for rtask in ${recog_set}; do
       feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}; mkdir -p ${feat_recog_dir}
