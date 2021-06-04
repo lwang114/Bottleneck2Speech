@@ -34,6 +34,8 @@ mboshi_train=false
 mboshi_recog=true
 mscoco_train=false
 mscoco_recog=false
+librispeech_train=false
+librispeech_recog=false
 gp_romanized=false
 ipa_transcript=false
 
@@ -237,6 +239,15 @@ if $mscoco_train || $mscoco_recog; then
   done
 fi
 
+# LibriSpeech
+if $librispeech_train || $librispeech_recog; then
+  for split in train_clean_100 dev_clean; do # TODO 
+    data_dir=data/librispeech/${split}
+    utils/fix_data_dir.sh $data_dir
+    utils/validate_data_dir.sh $data_dir
+  done
+fi
+
 # Combine all language specific training directories and generate a single
 # lang directory by combining all language specific dictionaries
 train_dirs=""
@@ -269,6 +280,12 @@ done
 if $mscoco_train; then
   train_dirs="data/mscoco/train ${train_dirs}"
   dev_dirs="data/mscoco/dev ${dev_dirs}"
+fi
+
+# LibriSpeech
+if $librispeech_train; then
+  train_dirs="data/librispeech/dev_clean ${train_dirs}" # XXX
+  dev_dirs="data/librispeech/train_clean_100 dev_clean ${dev_dirs}"
 fi
 
 ./utils/combine_data.sh data/train ${train_dirs}
