@@ -9,7 +9,7 @@
 
 # general configuration
 backend=pytorch
-stage=0        # start from 0 if you need to start from data preparation
+stage=1        # start from 0 if you need to start from data preparation
 stop_stage=100
 ngpu=1         # number of gpus ("0" uses cpu, otherwise use gpu)
 seed=1
@@ -90,13 +90,11 @@ for l in ${babel_recog} ${gp_recog}; do
   recog_set="eval_${l} ${recog_set}"
 done
 
-if ${mscoco_recog}; then
-  recog_set="eval"
-fi
 
 if ${librispeech_recog}; then
-  recog_set="train_clean_100 dev_clean"
-
+  recog_set="librispeech/train_clean_100 librispeech/dev_clean"
+fi
+  
 recog_set=${recog_set%% }
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
@@ -107,16 +105,16 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     --recog "${babel_recog}" \
     --gp-langs "${gp_langs}" \
     --gp-recog "${gp_recog}" \
-    --mboshi-train "${mboshi_train}" \
-    --mboshi-recog "${mboshi_recog}" \
     --librispeech-train "${librispeech_train}" \
     --librispeech-recog "${librispeech_recog}" \
     --gp-romanized "${gp_romanized}" \
     --ipa-transcript "${ipa_transcript}"
-  # TODO Figure out a way to avoid this command for mscoco only
-  # for x in ${train_set} ${train_dev} ${recog_set}; do
-	#   sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp
-  # done
+
+  for x in ${train_set} ${train_dev} ${recog_set}; do
+      if [ !${librispeech_train} ] && [ !${librispeech_recog} ]; then
+	      sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp
+      fi
+  done
 fi
 
 feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
@@ -128,8 +126,8 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   for x in ${recog_set} ${train_dev} ${train_set}; do
     nj=30
     # XXX Already done
-    steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
-    data/${x} exp/make_fbank/${x} ${fbankdir}
+    # steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
+    # data/${x} exp/make_fbank/${x} ${fbankdir}
     utils/fix_data_dir.sh data/${x}
   done
 
@@ -150,16 +148,16 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   elif [ -n "$(hostname | grep -i ifp-40)" ] && [ ! -d ${feat_tr_dir}/storage ]; then
       utils/create_split_dir.pl /ws/ifp-54_2/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
       utils/create_split_dir.pl /ws/ifp-54_2/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_dt_dir}/storage
-  elif [ -n "$(hostname | grep -i ifp)" ] && [ ! -d ${feat_tr_dir}/storage ]; then
-      utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
-      utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_dt_dir}/storage
+  # elif [ -n "$(hostname | grep -i ifp)" ] && [ ! -d ${feat_tr_dir}/storage ]; then
+  #    utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_set}/delta${do_delta}/storage ${feat_tr_dir}/storage
+  #    utils/create_split_dir.pl /ws/rz-cl-3/hasegawa/${USER}/espnet-data/egs/babel/${exp_name}/dump/${train_dev}/delta${do_delta}/storage ${feat_dt_dir}/storage
   fi
 
-  # XXX nj=20
-  dump.sh --cmd "$train_cmd" --nj 20 --do_delta ${do_delta} \
+  nj=20
+  dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta ${do_delta} \
       data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
-  # XXX nj=20
-  dump.sh --cmd "$train_cmd" --nj 20 --do_delta ${do_delta} \
+  nj=20
+  dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta ${do_delta} \
       data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
   for rtask in ${recog_set}; do
       feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}; mkdir -p ${feat_recog_dir}
@@ -270,7 +268,7 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Decoding"
-    nj=8
+    nj=1
     # XXX nj=32
 
     extra_opts=""

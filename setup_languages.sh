@@ -31,7 +31,7 @@ fi
 gp_langs="Arabic Czech French Korean Mandarin Spanish Thai"
 gp_recog="Arabic Czech French Korean Mandarin Spanish Thai"
 mboshi_train=false
-mboshi_recog=true
+mboshi_recog=false
 mscoco_train=false
 mscoco_recog=false
 librispeech_train=false
@@ -241,10 +241,10 @@ fi
 
 # LibriSpeech
 if $librispeech_train || $librispeech_recog; then
-  for split in train_clean_100 dev_clean; do # TODO 
+  for split in train_clean_100 dev_clean; do
     data_dir=data/librispeech/${split}
     utils/fix_data_dir.sh $data_dir
-    utils/validate_data_dir.sh $data_dir
+    utils/validate_data_dir.sh --no-feats $data_dir
   done
 fi
 
@@ -284,8 +284,8 @@ fi
 
 # LibriSpeech
 if $librispeech_train; then
-  train_dirs="data/librispeech/dev_clean ${train_dirs}" # XXX
-  dev_dirs="data/librispeech/train_clean_100 dev_clean ${dev_dirs}"
+  train_dirs="data/librispeech/dev_clean ${train_dirs}"
+  dev_dirs="data/librispeech/dev_clean ${dev_dirs}"
 fi
 
 ./utils/combine_data.sh data/train ${train_dirs}
