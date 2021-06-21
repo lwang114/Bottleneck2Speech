@@ -9,7 +9,7 @@
 
 # general configuration
 backend=pytorch
-stage=1        # start from 0 if you need to start from data preparation
+stage=4        # start from 0 if you need to start from data preparation
 stop_stage=100
 ngpu=1         # number of gpus ("0" uses cpu, otherwise use gpu)
 seed=1
@@ -90,9 +90,8 @@ for l in ${babel_recog} ${gp_recog}; do
   recog_set="eval_${l} ${recog_set}"
 done
 
-
 if ${librispeech_recog}; then
-  recog_set="librispeech/train_clean_100 librispeech/dev_clean"
+  recog_set="librispeech/train_clean_360" # XXX "librispeech/dev_clean"
 fi
   
 recog_set=${recog_set%% }
@@ -126,8 +125,8 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   for x in ${recog_set} ${train_dev} ${train_set}; do
     nj=30
     # XXX Already done
-    # steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
-    # data/${x} exp/make_fbank/${x} ${fbankdir}
+    steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
+    data/${x} exp/make_fbank/${x} ${fbankdir}
     utils/fix_data_dir.sh data/${x}
   done
 
@@ -268,8 +267,8 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Decoding"
-    nj=1
-    # XXX nj=32
+    # nj=1
+    nj=32
 
     extra_opts=""
     if ${use_lm}; then
@@ -290,7 +289,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         splitjson.py --parts ${nj} ${feat_recog_dir}/data.json
 
         #### use CPU for decoding
-        ngpu=0
+        ngpu=0 # XXX
 
         ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
             asr_recog.py \

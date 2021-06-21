@@ -241,7 +241,7 @@ fi
 
 # LibriSpeech
 if $librispeech_train || $librispeech_recog; then
-  for split in train_clean_100 dev_clean; do
+  for split in train_clean_360 train_clean_100 dev_clean; do
     data_dir=data/librispeech/${split}
     utils/fix_data_dir.sh $data_dir
     utils/validate_data_dir.sh --no-feats $data_dir
